@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block conteudo %}
+
+<div class="card">
+  <h2>Lote #{{ lote_id }} — {% if dry_run %}simulação{% else %}publicação real{% endif %}</h2>
+  <div class="grid">
+    {% for status, qtd in resumo.items() %}
+    <div class="metrica"><div class="v">{{ qtd }}</div><div class="r">{{ status }}</div></div>
+    {% endfor %}
+  </div>
+  {% if dry_run %}
+  <div class="aviso" style="margin-top:16px">
+    Nada foi publicado. <strong>simulado</strong> = teria correspondência no catálogo
+    e publicaria sem precisar de foto. <strong>sem_foto</strong> = não achou o produto
+    no catálogo, então precisa de imagem própria antes de anunciar.
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Itens</h2>
+  <table>
+    <tr><th>Ln</th><th>Código</th><th>Título</th><th>Preço</th>
+        <th>Status</th><th>Detalhe</th></tr>
+    {% for r in resultados %}
+    <tr>
+      <td class="fraco num">{{ r.linha }}</td>
+      <td>{{ r.codigo }}</td>
+      <td>{{ r.titulo }}</td>
+      <td class="num">R$ {{ '%.2f' | format(r.preco) }}</td>
+      <td>
+        {% if r.status in ('publicado','simulado','catalogo') %}
+          <span class="pill ok">{{ r.status }}</span>
+        {% elif r.status == 'erro' %}
+          <span class="pill erro">erro</span>
+        {% else %}
+          <span class="pill alerta">{{ r.status }}</span>
+        {% endif %}
+      </td>
+      <td class="fraco">
+        {% if r.permalink %}<a href="{{ r.permalink }}" target="_blank" rel="noopener">{{ r.ml_item_id }}</a> — {% endif %}
+        {{ r.mensagem }}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<p><a class="botao secundario" href="/">Voltar</a></p>
+{% endblock %}

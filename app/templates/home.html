@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block conteudo %}
+
+{% if problemas_config %}
+<div class="aviso">
+  <strong>Configuração incompleta:</strong>
+  {{ problemas_config | join(" · ") }}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Conta do Mercado Livre</h2>
+  {% if conta %}
+    <p>Conectado como <strong>{{ conta.nickname or conta.user_id }}</strong>
+       <span class="fraco">(user_id {{ conta.user_id }})</span></p>
+    <p class="fraco" style="font-size:12px">
+      Token válido até {{ conta.expira_em }} — a renovação é automática.</p>
+    <form method="post" action="/oauth/mercadolivre/desconectar">
+      <button class="secundario" type="submit">Desconectar</button>
+    </form>
+  {% else %}
+    <p class="fraco">Nenhuma conta conectada. A autorização é feita pelo próprio
+       Mercado Livre; o Águiahub nunca vê a sua senha.</p>
+    <a class="botao" href="/oauth/mercadolivre/login">Conectar conta do Mercado Livre</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Enviar planilha do ERP</h2>
+  <form method="post" action="/planilha/previa" enctype="multipart/form-data">
+    <div class="grid">
+      <div>
+        <label>Arquivo (.xls, .xlsx, .ods, .csv...)</label>
+        <input type="file" name="arquivo" accept=".xls,.xlsx,.xlsm,.ods,.csv,.tsv" required>
+      </div>
+      <div>
+        <label>Regra de preço</label>
+        <select name="regra_preco">
+          <option value="preco_publico">Usar PRECO_PUBLICO_ATUAL</option>
+          <option value="acrescimo">Preço público + %</option>
+          <option value="desconto_erp">Aplicar PCT_DESCONTO da planilha</option>
+          <option value="sobre_custo">Calcular sobre CUSTO_MEDIO</option>
+        </select>
+      </div>
+      <div>
+        <label>Percentual (quando aplicável)</label>
+        <input type="number" name="percentual" value="0" step="0.5">
+      </div>
+    </div>
+    <p style="margin-top:14px"><button type="submit">Ver prévia</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Lotes anteriores</h2>
+  {% if lotes %}
+  <table>
+    <tr><th>#</th><th>Arquivo</th><th>Linhas</th><th>Modo</th><th>Status</th><th>Data</th></tr>
+    {% for l in lotes %}
+    <tr>
+      <td><a href="/lotes/{{ l['id'] }}">{{ l['id'] }}</a></td>
+      <td>{{ l['arquivo'] }}</td>
+      <td class="num">{{ l['total_linhas'] }}</td>
+      <td>{% if l['dry_run'] %}<span class="pill neutro">simulação</span>
+          {% else %}<span class="pill ok">real</span>{% endif %}</td>
+      <td>{{ l['status'] }}</td>
+      <td class="fraco">{{ l['criado_em'][:16].replace('T',' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="fraco">Nenhum lote processado ainda.</p>
+  {% endif %}
+</div>
+{% endblock %}

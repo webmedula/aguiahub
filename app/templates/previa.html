@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block conteudo %}
+
+<div class="card">
+  <h2>Prévia — {{ arquivo }}</h2>
+  <div class="grid">
+    <div class="metrica"><div class="v">{{ total }}</div><div class="r">itens lidos</div></div>
+    <div class="metrica"><div class="v">{{ total - com_problema }}</div><div class="r">prontos</div></div>
+    <div class="metrica"><div class="v">{{ com_problema }}</div><div class="r">com pendência</div></div>
+    <div class="metrica"><div class="v">{{ abas | length }}</div><div class="r">abas</div></div>
+  </div>
+
+  <p class="fraco" style="margin-top:14px;font-size:13px">
+    Por aba: {% for nome, qtd in abas.items() %}{{ nome }} ({{ qtd }}){% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+</div>
+
+<div class="card">
+  <h2>Processar</h2>
+  <div class="aviso">
+    Comece sempre em <strong>simulação</strong>. Ela consulta o catálogo do Mercado
+    Livre e mostra quantos itens teriam correspondência — sem criar nenhum anúncio.
+  </div>
+  <form method="post" action="/planilha/processar">
+    <input type="hidden" name="arquivo_salvo" value="{{ arquivo }}">
+    <input type="hidden" name="regra_preco" value="{{ regra_preco }}">
+    <input type="hidden" name="percentual" value="{{ percentual }}">
+    <div class="grid">
+      <div>
+        <label>Abas (separadas por |, vazio = todas)</label>
+        <input type="text" name="abas" placeholder="Acima de R$1000,00" style="width:100%">
+      </div>
+      <div>
+        <label>Limite de itens (0 = sem limite)</label>
+        <input type="number" name="limite" value="20" min="0">
+      </div>
+      <div>
+        <label>Modo</label>
+        <select name="dry_run">
+          <option value="true">Simulação (não publica)</option>
+          <option value="false">Publicar de verdade</option>
+        </select>
+      </div>
+    </div>
+    <p style="margin-top:14px"><button type="submit">Executar</button></p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Linhas <span class="fraco">(primeiras {{ linhas | length }})</span></h2>
+  <table>
+    <tr><th>Aba</th><th>Ln</th><th>Código</th><th>Descrição do ERP</th>
+        <th>Título gerado</th><th>Qtd</th><th>Preço</th><th>Pendência</th></tr>
+    {% for l in linhas %}
+    <tr>
+      <td class="fraco">{{ l.aba[:14] }}</td>
+      <td class="fraco num">{{ l.linha }}</td>
+      <td>{{ l.codigo }}</td>
+      <td class="fraco">{{ l.descricao }}</td>
+      <td><strong>{{ l.titulo }}</strong>
+          <span class="fraco">({{ l.titulo | length }})</span></td>
+      <td class="num">{{ l.quantidade }}</td>
+      <td class="num">R$ {{ '%.2f' | format(l.preco) }}</td>
+      <td>{% if l.problemas %}<span class="pill erro">{{ l.problemas | join(', ') }}</span>
+          {% else %}<span class="pill ok">ok</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
