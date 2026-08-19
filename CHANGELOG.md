@@ -5,6 +5,48 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.3.3 — 19/08/2026
+
+**Diagnóstico da conta antes de publicar, e erros do ML traduzidos.**
+
+Erro observado no lote #1: `address_pending` — um código seco, sem explicação.
+Não era bug do sistema: a conta do Mercado Livre estava sem endereço cadastrado,
+e o ML não libera publicação nessa condição.
+
+- A tela inicial agora mostra se a conta está **apta a publicar**, listando os
+  impedimentos encontrados (endereço faltando, restrições de anúncio, conta
+  inativa). O operador vê isso ao entrar, não na hora de publicar.
+- Antes de publicar um lote, o sistema checa a conta uma única vez. Se ela
+  estiver bloqueada, aborta com mensagem única em vez de falhar item a item.
+- Erros conhecidos do ML passam a ser traduzidos para instruções acionáveis.
+  `address_pending`, por exemplo, vira: *"a conta está sem endereço cadastrado.
+  Entre no ML → Meu perfil → Endereços e cadastre o endereço de origem das
+  vendas."*
+- Erros desconhecidos continuam aparecendo na íntegra, sem mascarar nada.
+- Quatro testes cobrindo a tradução.
+
+## v0.3.2 — 19/08/2026
+
+**Correção: produto de catálogo inativo derrubava a publicação.**
+
+Erro observado no lote #1:
+
+```
+Product MLB43115763 is not active
+```
+
+- O parâmetro `status=active` na busca `/products/search` **não é confiável** —
+  ele devolveu um produto inativo. Agora o status é lido do detalhe do produto
+  (`/products/{id}`), que é a fonte correta.
+- Se o melhor candidato não estiver publicável, o sistema **tenta os próximos**
+  (até 3) antes de desistir. Um mesmo part number costuma bater com vários
+  produtos de catálogo, e o ML mantém descontinuados no acervo.
+- Novo status de item: `catalogo_inativo` — achou correspondência, mas nenhuma
+  utilizável. A mensagem lista o motivo de cada recusa, por produto.
+- Item inelegível não chega à tela de aprovação, então não há como tentar
+  publicar algo que o ML vai recusar.
+- Quatro testes de regressão sobre elegibilidade.
+
 ## v0.3.1 — 19/08/2026
 
 **Correção: publicação falhava por falta de `category_id`.**

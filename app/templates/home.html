@@ -15,6 +15,19 @@
        <span class="fraco">(user_id {{ conta.user_id }})</span></p>
     <p class="fraco" style="font-size:12px">
       Token válido até {{ conta.expira_em }} — a renovação é automática.</p>
+
+    {% if diagnostico and not diagnostico.apta %}
+    <div class="aviso" style="border-color:rgba(208,69,63,.4);
+         background:rgba(208,69,63,.1)">
+      <strong>Esta conta não está apta a publicar.</strong>
+      <ul style="margin:8px 0 0;padding-left:18px">
+        {% for imp in diagnostico.impedimentos %}<li>{{ imp }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% elif diagnostico %}
+    <p class="fraco" style="font-size:12px">
+      <span class="pill ok">conta apta a publicar</span></p>
+    {% endif %}
     <form method="post" action="/oauth/mercadolivre/desconectar">
       <button class="secundario" type="submit">Desconectar</button>
     </form>

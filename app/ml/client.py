@@ -23,6 +23,28 @@ log = logging.getLogger("aguiahub.ml")
 _TENTATIVAS = 4
 _lock = asyncio.Lock()
 
+# Códigos que o ML devolve secos, sem explicação. Traduzir aqui poupa o operador
+# de pesquisar o que significa e, principalmente, diz o que fazer a respeito.
+ERROS_CONHECIDOS = {
+    "address_pending":
+        "a conta do Mercado Livre está sem endereço cadastrado. Entre no ML → "
+        "Meu perfil → Endereços e cadastre o endereço de origem das vendas. "
+        "Sem isso o ML não deixa publicar nenhum anúncio.",
+    "is not active":
+        "o produto de catálogo escolhido está inativo no Mercado Livre.",
+    "item.category_id.invalid":
+        "a categoria identificada não é válida para este produto.",
+    "invalid_listing_type":
+        "o tipo de anúncio não é aceito nesta categoria.",
+    "price_invalid":
+        "o preço está fora da faixa aceita pelo Mercado Livre para esta categoria.",
+    "user_not_allowed":
+        "a conta não tem permissão para publicar nesta categoria — pode faltar "
+        "completar o cadastro de vendedor no ML.",
+    "invalid_catalog_product":
+        "o produto de catálogo não aceita novos anúncios.",
+}
+
 
 class MLApiError(RuntimeError):
     def __init__(self, status: int, corpo: Any, endpoint: str):
@@ -33,6 +55,11 @@ class MLApiError(RuntimeError):
 
     def mensagem_amigavel(self) -> str:
         """Traduz o erro do ML para algo que o operador entenda na tela."""
+        bruto = str(self.corpo)
+        for chave, texto in ERROS_CONHECIDOS.items():
+            if chave in bruto:
+                return texto
+
         corpo = self.corpo
         if isinstance(corpo, dict):
             causas = corpo.get("cause") or []
@@ -145,6 +172,46 @@ class MLClient:
 
     async def eu(self) -> dict:
         return await self.get("/users/me")
+
+    async def diagnostico_conta(self) -> dict:
+        """Confere se a conta está apta a publicar, ANTES de tentar.
+
+        Evita queimar requisição (e tempo do operador) descobrindo item a item
+        que a conta inteira está bloqueada. Em caso de dúvida devolve `apta`,
+        para não travar a publicação por um falso negativo nosso.
+        """
+        info: dict = {"apta": True, "impedimentos": [], "nickname": None}
+        try:
+            eu = await self.eu()
+        except MLApiError as exc:
+            info["apta"] = False
+            info["impedimentos"].append(f"não foi possível ler a conta: "
+                                        f"{exc.mensagem_amigavel()}")
+            return info
+
+        info["nickname"] = eu.get("nickname")
+        info["user_id"] = eu.get("id")
+
+        # O ML exige endereço de origem para liberar publicação (address_pending)
+        try:
+            enderecos = await self.get(f"/users/{eu['id']}/addresses")
+            if isinstance(enderecos, list) and not enderecos:
+                info["apta"] = False
+                info["impedimentos"].append(ERROS_CONHECIDOS["address_pending"])
+        except MLApiError:
+            pass       # sem permissão para ler endereços: seguimos em frente
+
+        for restricao in (eu.get("status") or {}).get("list_restrictions") or []:
+            info["apta"] = False
+            info["impedimentos"].append(
+                f"restrição do ML para anunciar: {restricao}")
+
+        situacao = ((eu.get("status") or {}).get("site_status") or "").lower()
+        if situacao and situacao != "active":
+            info["apta"] = False
+            info["impedimentos"].append(f"conta com status '{situacao}' no ML")
+
+        return info
 
     async def tipos_de_anuncio(self) -> list[dict]:
         s = self._settings

@@ -215,6 +215,19 @@ async def publicar_aprovados(lote_id: int,
     semaforo = asyncio.Semaphore(s.publish_concurrency)
     aprovados = storage.itens_aprovados(lote_id)
 
+    # Checa a conta ANTES de publicar. Se ela estiver bloqueada (sem endereço,
+    # com restrição), todos os itens falhariam igual — melhor avisar uma vez.
+    diagnostico = await client.diagnostico_conta()
+    if not diagnostico["apta"]:
+        motivo = " | ".join(diagnostico["impedimentos"])
+        log.warning("Publicação abortada — conta inapta: %s", motivo)
+        for row in aprovados:
+            storage.atualizar_item(row["id"], status=ERRO, erro=motivo)
+        return [{"linha": r["linha"], "codigo": r["sku"],
+                 "titulo": r["catalog_nome"] or r["titulo"],
+                 "preco": float(r["preco"] or 0),
+                 "status": ERRO, "mensagem": motivo} for r in aprovados]
+
     async def publicar(row) -> dict:
         async with semaforo:
             item_id = row["id"]

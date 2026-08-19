@@ -53,13 +53,22 @@ async def health():
 async def home(request: Request):
     conta = storage.carregar_token()
     info = None
+    diagnostico = None
     if conta:
         bundle, nickname = conta
         info = {"user_id": bundle.user_id, "nickname": nickname,
                 "expira_em": bundle.expires_at.isoformat()}
+        # Mostra impedimentos da conta (endereço faltando, restrições) aqui,
+        # em vez de deixar o operador descobrir só na hora de publicar.
+        try:
+            diagnostico = await MLClient().diagnostico_conta()
+        except Exception as exc:                      # noqa: BLE001
+            log.warning("Não foi possível diagnosticar a conta: %s", exc)
+
     return templates.TemplateResponse(request, "home.html", {
         "request": request,
         "conta": info,
+        "diagnostico": diagnostico,
         "lotes": storage.listar_lotes(),
         "problemas_config": s.validate(),
     })
