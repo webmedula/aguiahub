@@ -32,6 +32,7 @@ class CandidatoCatalogo:
     fotos: int = 0
     foto_url: str = ""
     permalink: str = ""
+    category_id: str = ""
 
 
 def _normalizar(texto: str) -> str:
@@ -139,6 +140,51 @@ def _extrair_foto(produto: dict) -> str:
     return ""
 
 
+async def _categoria_do_produto(client: MLClient, produto: dict,
+                                nome: str) -> str:
+    """Descobre o category_id do produto de catálogo.
+
+    O ML EXIGE `category_id` no POST /items mesmo quando a publicação é por
+    catálogo — omitir devolve:
+        "The body does not contains some or none of the following properties
+         [category_id]"
+
+    O campo nem sempre vem na raiz de /products/{id}, então tentamos três
+    fontes, da mais confiável para a menos:
+      1. `category_id` na raiz do produto
+      2. `category_id` do anúncio que está ganhando o buy box
+      3. o preditor de categoria do ML a partir do nome do produto
+    """
+    if produto.get("category_id"):
+        return produto["category_id"]
+
+    vencedor = produto.get("buy_box_winner") or {}
+    if isinstance(vencedor, dict) and vencedor.get("category_id"):
+        return vencedor["category_id"]
+
+    for filho in (produto.get("children_ids") or [])[:1]:
+        try:
+            detalhe = await client.get(f"/products/{filho}")
+            if detalhe.get("category_id"):
+                return detalhe["category_id"]
+        except MLApiError:
+            pass
+
+    if nome:
+        s = get_settings()
+        try:
+            sugestoes = await client.get(
+                f"/sites/{s.ml_site_id}/domain_discovery/search",
+                params={"limit": 1, "q": nome[:120]},
+            )
+            if isinstance(sugestoes, list) and sugestoes:
+                return sugestoes[0].get("category_id") or ""
+        except MLApiError:
+            pass
+
+    return ""
+
+
 async def enriquecer_candidato(client: MLClient,
                                cand: CandidatoCatalogo) -> CandidatoCatalogo:
     """Busca foto, permalink e ficha técnica do produto de catálogo.
@@ -162,4 +208,5 @@ async def enriquecer_candidato(client: MLClient,
         }
     if produto.get("name"):
         cand.nome = produto["name"]
+    cand.category_id = await _categoria_do_produto(client, produto, cand.nome)
     return cand

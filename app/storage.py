@@ -70,6 +70,7 @@ _MIGRACOES = {
         "catalog_nome":       "TEXT",
         "catalog_foto":       "TEXT",
         "catalog_permalink":  "TEXT",
+        "catalog_category_id": "TEXT",
         "catalog_atributos":  "TEXT",
         "aprovado":           "INTEGER NOT NULL DEFAULT 0",
     },
@@ -209,7 +210,8 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
     }
     permitidos = {"descricao_erp", "marca", "quantidade", "preco", "confianca",
                   "catalog_product_id", "catalog_nome", "catalog_foto",
-                  "catalog_permalink", "catalog_atributos", "status", "erro"}
+                  "catalog_permalink", "catalog_atributos", "catalog_category_id",
+                  "status", "erro"}
     for chave, valor in extras.items():
         if chave in permitidos and valor is not None:
             campos[chave] = (json.dumps(valor, ensure_ascii=False)

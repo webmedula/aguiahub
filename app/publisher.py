@@ -61,6 +61,7 @@ def montar_payload(
     preco: float,
     listing_type_id: str = "gold_special",
     catalog_product_id: str | None = None,
+    category_id: str | None = None,
 ) -> dict:
     s = get_settings()
     payload: dict = {
@@ -72,6 +73,10 @@ def montar_payload(
         "condition": "new",          # catálogo só aceita 'new'
         "listing_type_id": listing_type_id,
     }
+
+    # O ML exige category_id SEMPRE, inclusive na publicação por catálogo.
+    if category_id:
+        payload["category_id"] = category_id
 
     if catalog_product_id:
         # Título, fotos e atributos vêm do catálogo — enviar os nossos causaria
@@ -181,6 +186,7 @@ async def analisar_lote(
             catalog_foto=cand.foto_url if cand else None,
             catalog_permalink=cand.permalink if cand else None,
             catalog_atributos=cand.atributos if cand else None,
+            catalog_category_id=cand.category_id if cand else None,
         )
 
     return resultados
@@ -209,8 +215,20 @@ async def publicar_aprovados(lote_id: int,
                 quantidade=int(row["quantidade"] or 1),
                 marca=row["marca"] or "",
             )
+            categoria = row["catalog_category_id"]
+            if not categoria:
+                # O ML recusa o POST sem category_id. Melhor barrar aqui, com
+                # mensagem clara, do que deixar a API devolver erro genérico.
+                msg = ("categoria do Mercado Livre não identificada para este "
+                       "produto de catálogo — reanalise o lote")
+                storage.atualizar_item(item_id, status=ERRO, erro=msg)
+                return {"linha": row["linha"], "codigo": row["sku"],
+                        "titulo": row["catalog_nome"] or row["titulo"],
+                        "preco": float(row["preco"] or 0),
+                        "status": ERRO, "mensagem": msg}
+
             payload = montar_payload(p, float(row["preco"] or 0), listing_type_id,
-                                     row["catalog_product_id"])
+                                     row["catalog_product_id"], categoria)
             try:
                 criado = await client.post("/items", payload)
             except MLApiError as exc:

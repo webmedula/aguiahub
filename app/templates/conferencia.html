@@ -86,7 +86,14 @@
               — <a href="{{ i['catalog_permalink'] }}" target="_blank"
                    rel="noopener">ver no Mercado Livre ↗</a>
             {% endif %}
-            <div class="fraco" style="font-size:11px">{{ i['catalog_product_id'] }}</div>
+            <div class="fraco" style="font-size:11px">
+              {{ i['catalog_product_id'] }}
+              {% if i['catalog_category_id'] %}
+                · categoria {{ i['catalog_category_id'] }}
+              {% else %}
+                · <span style="color:#e88a84">categoria não identificada — não publica</span>
+              {% endif %}
+            </div>
           </td>
         </tr>
         <tr>
