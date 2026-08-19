@@ -22,8 +22,9 @@ from dataclasses import dataclass, field
 
 from app import storage
 from app.config import get_settings
-from app.ml.catalog import (CandidatoCatalogo, buscar_no_catalogo,
-                            escolher_publicavel)
+from app.abreviacoes import expandir
+from app.ml.catalog import (CandidatoCatalogo, anuncios_ativos,
+                            buscar_no_catalogo, escolher_publicavel)
 from app.ml.client import MLClient, MLApiError
 from app.sheets import LinhaProduto, calcular_preco, montar_descricao, montar_titulo
 
@@ -104,6 +105,30 @@ def _atributos(p: LinhaProduto) -> list[dict]:
     return attrs
 
 
+async def _pista_de_mercado(client: MLClient, p: LinhaProduto) -> str:
+    """Diz se a peça é vendida no ML mesmo sem produto de catálogo utilizável.
+
+    Sem isso, o operador só recebe "sem catálogo" e não sabe se o problema é a
+    peça não ter mercado ou apenas faltar foto.
+    """
+    termo = f"{p.codigo} {expandir(p.descricao)}".strip()
+    dados = await anuncios_ativos(client, termo)
+    if not dados["total"]:
+        dados = await anuncios_ativos(client, expandir(p.descricao))
+
+    if not dados["total"]:
+        return "Também não encontrei anúncios ativos com esse termo."
+
+    precos = [x for x in dados["precos"] if x]
+    faixa = ""
+    if precos:
+        faixa = f" Preços praticados: R$ {min(precos):.2f} a R$ {max(precos):.2f}."
+    exemplo = dados["exemplos"][0] if dados["exemplos"] else ""
+    return (f"Há {dados['total']} anúncio(s) ativo(s) no ML "
+            f"(ex.: \"{exemplo}\").{faixa} "
+            f"Dá para anunciar como anúncio próprio, mas precisa de foto.")
+
+
 # ---------------------------------------------------------------------------
 # Passo 1 — análise (nunca publica)
 # ---------------------------------------------------------------------------
@@ -156,7 +181,8 @@ async def analisar_lote(
 
             if not candidatos:
                 res.status = SEM_CATALOGO
-                res.mensagem = "sem correspondência no catálogo — precisa de foto própria"
+                res.mensagem = ("sem correspondência no catálogo. "
+                                + await _pista_de_mercado(client, p))
                 return res
 
             # Percorre os candidatos até achar um que esteja ATIVO e com
@@ -166,8 +192,9 @@ async def analisar_lote(
 
             if melhor is None:
                 res.status = CATALOGO_INATIVO
-                res.mensagem = ("nenhum produto de catálogo utilizável — "
-                                + "; ".join(recusas))
+                res.mensagem = ("nenhum produto de catálogo utilizável ("
+                                + "; ".join(recusas) + "). "
+                                + await _pista_de_mercado(client, p))
                 return res
 
             res.candidato = melhor

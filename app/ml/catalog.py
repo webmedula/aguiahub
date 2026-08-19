@@ -16,6 +16,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from app.abreviacoes import expandir
 from app.config import get_settings
 from app.ml.client import MLClient, MLApiError
 
@@ -66,10 +67,19 @@ async def buscar_no_catalogo(
 ) -> list[CandidatoCatalogo]:
     """Retorna candidatos de catálogo ordenados por confiança."""
     s = get_settings()
+    # O ERP abrevia ("BBA ARLA EMITEC 12V"); o catálogo do ML escreve por extenso
+    # ("Bomba De Arla 32 Emitec 12v"). Sem expandir, a busca por descrição não
+    # encontra nada.
+    desc_expandida = expandir(descricao)
+
     tentativas = [
         (codigo, "part number exato"),
-        (f"{codigo} {descricao}".strip(), "código + descrição"),
+        (f"{codigo} {desc_expandida}".strip(), "código + descrição"),
+        (desc_expandida, "descrição por extenso"),
     ]
+    if desc_expandida.upper() != (descricao or "").upper():
+        # ainda tenta a descrição crua, caso o catálogo use a abreviação
+        tentativas.append((descricao, "descrição do ERP"))
 
     vistos: dict[str, CandidatoCatalogo] = {}
 
@@ -225,10 +235,42 @@ def publicavel(cand: CandidatoCatalogo) -> tuple[bool, str]:
     return True, ""
 
 
+async def anuncios_ativos(client: MLClient, termo: str) -> dict:
+    """Procura anúncios ATIVOS no ML para o termo dado.
+
+    Serve para quando não há produto de catálogo utilizável: se existem
+    concorrentes vendendo a peça, ela é anunciável — só que como anúncio
+    próprio, o que exige foto. De quebra descobrimos a categoria e a faixa de
+    preço praticada.
+    """
+    s = get_settings()
+    vazio = {"total": 0, "category_id": "", "exemplos": [], "precos": []}
+    if not termo.strip():
+        return vazio
+    try:
+        resp = await client.get(f"/sites/{s.ml_site_id}/search",
+                                params={"q": termo[:120], "limit": 5})
+    except MLApiError:
+        return vazio
+
+    resultados = resp.get("results") or []
+    if not resultados:
+        return vazio
+
+    categorias = [r.get("category_id") for r in resultados if r.get("category_id")]
+    mais_comum = max(set(categorias), key=categorias.count) if categorias else ""
+    return {
+        "total": (resp.get("paging") or {}).get("total", len(resultados)),
+        "category_id": mais_comum,
+        "exemplos": [r.get("title", "")[:70] for r in resultados[:3]],
+        "precos": [r.get("price") for r in resultados if r.get("price")],
+    }
+
+
 async def escolher_publicavel(
     client: MLClient,
     candidatos: list[CandidatoCatalogo],
-    maximo: int = 3,
+    maximo: int = 8,
 ) -> tuple[CandidatoCatalogo | None, list[str]]:
     """Percorre os candidatos e devolve o primeiro que dá para publicar.
 

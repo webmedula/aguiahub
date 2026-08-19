@@ -20,6 +20,8 @@ from pathlib import Path
 import xlrd
 from openpyxl import load_workbook
 
+from app.abreviacoes import expandir
+
 # Nome na planilha -> nome interno
 COLUNAS = {
     "Cód": "codigo",
@@ -286,7 +288,8 @@ def montar_titulo(p: LinhaProduto) -> str:
     def limpar(t: str) -> str:
         return re.sub(r"\s+", " ", (t or "").strip()).title()
 
-    descricao = limpar(p.descricao)
+    # "BBA ARLA EMITEC 12V" -> "Bomba Arla 32 Emitec 12V"
+    descricao = limpar(expandir(p.descricao))
     marca = limpar(p.marca) if p.marca.upper() not in MARCAS_IGNORADAS else ""
     codigo = p.codigo.strip().upper()
     aplicacao = limpar(p.aplicacao)

@@ -5,6 +5,35 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.4.0 — 19/08/2026
+
+**Expansão das abreviações do ERP e pista de mercado.**
+
+Caso que originou: o item `5273337`, descrito no ERP como `BBA ARLA EMITEC 12V`,
+existe no Mercado Livre como **"Bomba De Arla 32 Emitec 12v"** — mas o sistema
+não achava, porque procurava literalmente por "BBA", que ninguém escreve no ML.
+
+- Novo arquivo `app/abreviacoes.py` com o dicionário de abreviações do ERP
+  (`BBA`→Bomba, `CIL`→Cilindro, `VLV`→Válvula, `MBB`→Mercedes-Benz, e outras).
+  **Para acrescentar uma abreviação basta editar esse arquivo** — nenhuma outra
+  parte do código muda.
+- A expansão é aplicada em dois lugares: no termo de busca do catálogo e no
+  título gerado. `BBA ARLA EMITEC 12V` agora vira `Bomba Arla 32 Emitec 12V`.
+- A busca no catálogo passou de 2 para até 4 tentativas, incluindo busca só pela
+  descrição por extenso — antes, item cujo código não estivesse cadastrado como
+  part number no ML nunca era encontrado.
+- Ao percorrer candidatos em busca de um produto ativo, o limite subiu de 3 para
+  8. Peça com muitos produtos de catálogo descontinuados tinha chance real de
+  ficar de fora.
+- **Pista de mercado:** quando não há produto de catálogo utilizável, o sistema
+  agora busca anúncios ativos no ML e informa quantos existem, um exemplo de
+  título e a faixa de preço praticada. Assim dá para distinguir "essa peça não
+  vende no ML" de "vende, só falta foto".
+- Abreviações de significado ainda não confirmado (`SMD`, `CI`, `CAT`, `TO`,
+  `BTS`) são deixadas intactas de propósito — expandir no chute produziria busca
+  errada, que é pior do que não expandir.
+- Seis testes cobrindo a expansão, inclusive o caso real do item 5273337.
+
 ## v0.3.3 — 19/08/2026
 
 **Diagnóstico da conta antes de publicar, e erros do ML traduzidos.**
