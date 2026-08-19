@@ -22,7 +22,8 @@ from dataclasses import dataclass, field
 
 from app import storage
 from app.config import get_settings
-from app.ml.catalog import CandidatoCatalogo, buscar_no_catalogo, enriquecer_candidato
+from app.ml.catalog import (CandidatoCatalogo, buscar_no_catalogo,
+                            escolher_publicavel)
 from app.ml.client import MLClient, MLApiError
 from app.sheets import LinhaProduto, calcular_preco, montar_descricao, montar_titulo
 
@@ -34,6 +35,7 @@ PRECO_MINIMO = 1.0
 # Status possíveis de um item
 AGUARDANDO = "aguardando_aprovacao"   # casou com o catálogo, esperando o operador
 SEM_CATALOGO = "sem_catalogo"         # não achou match -> precisa de foto própria
+CATALOGO_INATIVO = "catalogo_inativo"  # achou, mas o produto não está ativo no ML
 IGNORADO = "ignorado"                 # dado ruim, preço inválido ou já publicado
 ERRO = "erro"
 PUBLICADO = "publicado"
@@ -157,9 +159,17 @@ async def analisar_lote(
                 res.mensagem = "sem correspondência no catálogo — precisa de foto própria"
                 return res
 
-            # Enriquece só o melhor candidato (foto + ficha) para a tela de
-            # conferência. Enriquecer todos seria uma chamada por candidato.
-            melhor = await enriquecer_candidato(client, candidatos[0])
+            # Percorre os candidatos até achar um que esteja ATIVO e com
+            # categoria. Produto inativo faz o POST /items falhar com
+            # "Product MLB... is not active".
+            melhor, recusas = await escolher_publicavel(client, candidatos)
+
+            if melhor is None:
+                res.status = CATALOGO_INATIVO
+                res.mensagem = ("nenhum produto de catálogo utilizável — "
+                                + "; ".join(recusas))
+                return res
+
             res.candidato = melhor
             res.outros_candidatos = candidatos[1:4]
             res.status = AGUARDANDO
@@ -175,7 +185,8 @@ async def analisar_lote(
             payload={"preco": r.preco,
                      "catalog_product_id": cand.catalog_product_id if cand else None},
             status=r.status,
-            erro=r.mensagem if r.status in (ERRO, IGNORADO, SEM_CATALOGO) else None,
+            erro=r.mensagem if r.status in (ERRO, IGNORADO, SEM_CATALOGO,
+                                            CATALOGO_INATIVO) else None,
             descricao_erp=r.descricao_erp,
             marca=r.marca,
             quantidade=r.quantidade,

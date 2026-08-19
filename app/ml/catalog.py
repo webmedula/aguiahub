@@ -208,5 +208,41 @@ async def enriquecer_candidato(client: MLClient,
         }
     if produto.get("name"):
         cand.nome = produto["name"]
+    # O status do detalhe é a verdade. O filtro status=active da busca não é
+    # confiável: já voltou produto inativo, e o POST /items recusa com
+    # "Product MLB... is not active".
+    cand.status = produto.get("status") or cand.status
     cand.category_id = await _categoria_do_produto(client, produto, cand.nome)
     return cand
+
+
+def publicavel(cand: CandidatoCatalogo) -> tuple[bool, str]:
+    """Diz se dá para publicar contra este produto de catálogo, e por que não."""
+    if (cand.status or "").lower() != "active":
+        return False, f"produto de catálogo está '{cand.status or 'sem status'}' no ML"
+    if not cand.category_id:
+        return False, "categoria do Mercado Livre não identificada"
+    return True, ""
+
+
+async def escolher_publicavel(
+    client: MLClient,
+    candidatos: list[CandidatoCatalogo],
+    maximo: int = 3,
+) -> tuple[CandidatoCatalogo | None, list[str]]:
+    """Percorre os candidatos e devolve o primeiro que dá para publicar.
+
+    Um part number pode bater com vários produtos de catálogo, e nem todos estão
+    ativos — o ML mantém produtos descontinuados no acervo. Em vez de desistir no
+    primeiro, tentamos os próximos antes de marcar o item como sem catálogo.
+
+    Retorna (candidato_ok, motivos_das_recusas).
+    """
+    motivos: list[str] = []
+    for cand in candidatos[:maximo]:
+        enriquecido = await enriquecer_candidato(client, cand)
+        ok, motivo = publicavel(enriquecido)
+        if ok:
+            return enriquecido, motivos
+        motivos.append(f"{enriquecido.catalog_product_id}: {motivo}")
+    return None, motivos
