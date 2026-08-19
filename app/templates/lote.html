@@ -20,7 +20,7 @@
       <td>{{ i['sku'] }}</td>
       <td>{{ i['titulo'] }}</td>
       <td>
-        {% if i['status'] in ('publicado','simulado','catalogo') %}
+        {% if i['status'] == 'publicado' %}
           <span class="pill ok">{{ i['status'] }}</span>
         {% elif i['status'] == 'erro' %}
           <span class="pill erro">erro</span>
@@ -34,5 +34,5 @@
     {% endfor %}
   </table>
 </div>
-<p><a class="botao secundario" href="/">Voltar</a></p>
+<p><a class="botao secundario" href="/">Voltar</a> <a class="botao" href="/lotes/{{ lote['id'] }}/conferencia">Abrir conferência</a></p>
 {% endblock %}

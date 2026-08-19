@@ -57,6 +57,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_itens_sku_publicado
     ON itens(sku) WHERE status = 'publicado' AND sku IS NOT NULL;
 """
 
+# Colunas acrescentadas depois da primeira versão. Como o banco vive num volume
+# que sobrevive aos deploys, elas precisam ser aplicadas em bancos já existentes.
+_MIGRACOES = {
+    "itens": {
+        "descricao_erp":      "TEXT",
+        "marca":              "TEXT",
+        "quantidade":         "INTEGER",
+        "preco":              "REAL",
+        "confianca":          "TEXT",
+        "catalog_product_id": "TEXT",
+        "catalog_nome":       "TEXT",
+        "catalog_foto":       "TEXT",
+        "catalog_permalink":  "TEXT",
+        "catalog_atributos":  "TEXT",
+        "aprovado":           "INTEGER NOT NULL DEFAULT 0",
+    },
+}
+
+
+def _migrar(conn) -> None:
+    for tabela, colunas in _MIGRACOES.items():
+        existentes = {r["name"] for r in
+                      conn.execute(f"PRAGMA table_info({tabela})").fetchall()}
+        for nome, tipo in colunas.items():
+            if nome not in existentes:
+                conn.execute(f"ALTER TABLE {tabela} ADD COLUMN {nome} {tipo}")
+
 
 def _caminho_db() -> str:
     s = get_settings()
@@ -86,6 +113,7 @@ def init_db() -> None:
     os.makedirs(get_settings().data_dir, exist_ok=True)
     with conexao() as conn:
         conn.executescript(_SCHEMA)
+        _migrar(conn)
 
 
 # --------------------------------------------------------------------------
@@ -164,21 +192,63 @@ def criar_lote(arquivo: str, total_linhas: int, dry_run: bool, mapeamento: dict)
 
 
 def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None,
-                   payload: dict) -> int:
+                   payload: dict, **extras) -> int:
+    """Registra o item do lote.
+
+    `extras` aceita: descricao_erp, marca, quantidade, preco, confianca,
+    catalog_product_id, catalog_nome, catalog_foto, catalog_permalink,
+    catalog_atributos, status, erro.
+    """
+    campos = {
+        "lote_id": lote_id,
+        "linha": linha,
+        "sku": sku,
+        "titulo": titulo,
+        "payload": json.dumps(payload, ensure_ascii=False),
+        "atualizado_em": datetime.now(timezone.utc).isoformat(),
+    }
+    permitidos = {"descricao_erp", "marca", "quantidade", "preco", "confianca",
+                  "catalog_product_id", "catalog_nome", "catalog_foto",
+                  "catalog_permalink", "catalog_atributos", "status", "erro"}
+    for chave, valor in extras.items():
+        if chave in permitidos and valor is not None:
+            campos[chave] = (json.dumps(valor, ensure_ascii=False)
+                             if isinstance(valor, (dict, list)) else valor)
+
+    colunas = ", ".join(campos)
+    marcas = ", ".join("?" for _ in campos)
     with conexao() as conn:
         cur = conn.execute(
-            """INSERT INTO itens (lote_id, linha, sku, titulo, payload, atualizado_em)
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (
-                lote_id,
-                linha,
-                sku,
-                titulo,
-                json.dumps(payload, ensure_ascii=False),
-                datetime.now(timezone.utc).isoformat(),
-            ),
+            f"INSERT INTO itens ({colunas}) VALUES ({marcas})",
+            tuple(campos.values()),
         )
         return int(cur.lastrowid)
+
+
+def definir_aprovacao(lote_id: int, ids_aprovados: list[int]) -> int:
+    """Marca como aprovados apenas os IDs informados. O resto fica reprovado."""
+    with conexao() as conn:
+        conn.execute("UPDATE itens SET aprovado = 0 WHERE lote_id = ?", (lote_id,))
+        if not ids_aprovados:
+            return 0
+        marcas = ",".join("?" for _ in ids_aprovados)
+        cur = conn.execute(
+            f"""UPDATE itens SET aprovado = 1
+                WHERE lote_id = ? AND id IN ({marcas})
+                  AND status = 'aguardando_aprovacao'""",
+            (lote_id, *ids_aprovados),
+        )
+        return cur.rowcount
+
+
+def itens_aprovados(lote_id: int) -> list[sqlite3.Row]:
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM itens
+               WHERE lote_id = ? AND aprovado = 1 AND status = 'aguardando_aprovacao'
+               ORDER BY linha""",
+            (lote_id,),
+        ).fetchall()
 
 
 def atualizar_item(item_id: int, *, status: str, ml_item_id: str | None = None,

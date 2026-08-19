@@ -30,6 +30,8 @@ class CandidatoCatalogo:
     motivo: str
     atributos: dict = field(default_factory=dict)
     fotos: int = 0
+    foto_url: str = ""
+    permalink: str = ""
 
 
 def _normalizar(texto: str) -> str:
@@ -118,3 +120,46 @@ async def buscar_no_catalogo(
 
 async def detalhe_produto(client: MLClient, catalog_product_id: str) -> dict:
     return await client.get(f"/products/{catalog_product_id}")
+
+
+def _extrair_foto(produto: dict) -> str:
+    """Pega a URL da primeira imagem do produto de catálogo.
+
+    O ML varia o formato entre 'pictures[].url', 'pictures[].secure_url' e
+    'pictures[].id' — por isso a busca é defensiva.
+    """
+    for pic in (produto.get("pictures") or []):
+        if not isinstance(pic, dict):
+            continue
+        for chave in ("secure_url", "url"):
+            if pic.get(chave):
+                return pic[chave]
+        if pic.get("id"):
+            return f"https://http2.mlstatic.com/D_{pic['id']}-O.jpg"
+    return ""
+
+
+async def enriquecer_candidato(client: MLClient,
+                               cand: CandidatoCatalogo) -> CandidatoCatalogo:
+    """Busca foto, permalink e ficha técnica do produto de catálogo.
+
+    É o que alimenta a tela de conferência: sem a foto, o operador não tem como
+    confirmar que o produto do ML é mesmo a peça dele.
+    """
+    try:
+        produto = await detalhe_produto(client, cand.catalog_product_id)
+    except MLApiError:
+        return cand      # sem detalhe a tela ainda funciona, só fica sem imagem
+
+    cand.foto_url = _extrair_foto(produto)
+    cand.permalink = produto.get("permalink") or ""
+    cand.fotos = len(produto.get("pictures") or [])
+    if produto.get("attributes"):
+        cand.atributos = {
+            a.get("name") or a.get("id"): a.get("value_name")
+            for a in produto["attributes"]
+            if a.get("value_name")
+        }
+    if produto.get("name"):
+        cand.nome = produto["name"]
+    return cand

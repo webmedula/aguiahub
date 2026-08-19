@@ -12,9 +12,10 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app import storage
 from app.config import get_settings
+from app.version import VERSAO, LANCADA_EM
 from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
-from app.publisher import processar_lote, resumir
+from app.publisher import analisar_lote, publicar_aprovados, resumir
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
 
@@ -23,16 +24,18 @@ logging.basicConfig(level=logging.INFO,
 log = logging.getLogger("aguiahub")
 
 s = get_settings()
-app = FastAPI(title="Águiahub", docs_url="/api/docs")
+app = FastAPI(title="Águiahub", version=VERSAO, docs_url="/api/docs")
 app.add_middleware(SessionMiddleware, secret_key=s.secret_key, https_only=True)
 
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+templates.env.globals["VERSAO"] = VERSAO
 
 
 @app.on_event("startup")
 def _startup() -> None:
     storage.init_db()
+    log.info("Águiahub v%s (%s) iniciando", VERSAO, LANCADA_EM)
     for problema in s.validate():
         log.warning("Configuração: %s", problema)
 
@@ -43,7 +46,7 @@ def _startup() -> None:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "versao": VERSAO, "lancada_em": LANCADA_EM}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -158,13 +161,13 @@ async def previa(request: Request, arquivo: UploadFile = File(...),
     })
 
 
-@app.post("/planilha/processar", response_class=HTMLResponse)
-async def processar(request: Request, arquivo_salvo: str = Form(...),
-                    regra_preco: str = Form("preco_publico"),
-                    percentual: float = Form(0.0),
-                    dry_run: bool = Form(True),
-                    abas: str = Form(""),
-                    limite: int = Form(0)):
+@app.post("/planilha/analisar")
+async def analisar(request: Request, arquivo_salvo: str = Form(...),
+                   regra_preco: str = Form("preco_publico"),
+                   percentual: float = Form(0.0),
+                   abas: str = Form(""),
+                   limite: int = Form(0)):
+    """Consulta o catálogo do ML e monta a conferência. NÃO publica nada."""
     if not storage.carregar_token():
         raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
 
@@ -180,18 +183,60 @@ async def processar(request: Request, arquivo_salvo: str = Form(...),
     if limite > 0:
         itens = itens[:limite]
 
-    lote_id = storage.criar_lote(arquivo_salvo, len(itens), dry_run,
+    lote_id = storage.criar_lote(arquivo_salvo, len(itens), True,
                                  {"regra_preco": regra_preco, "percentual": percentual})
-    resultados = await processar_lote(
-        itens, regra_preco=regra_preco, percentual=percentual,
-        dry_run=dry_run, lote_id=lote_id,
-    )
-    storage.atualizar_status_lote(lote_id, "simulado" if dry_run else "concluido")
+    await analisar_lote(itens, regra_preco=regra_preco, percentual=percentual,
+                        lote_id=lote_id)
+    storage.atualizar_status_lote(lote_id, "aguardando_aprovacao")
+
+    return RedirectResponse(f"/lotes/{lote_id}/conferencia", status_code=303)
+
+
+@app.get("/lotes/{lote_id}/conferencia", response_class=HTMLResponse)
+async def conferencia(request: Request, lote_id: int):
+    lote = storage.lote(lote_id)
+    if not lote:
+        raise HTTPException(404, "Lote não encontrado.")
+
+    itens = storage.itens_do_lote(lote_id)
+    resumo: dict[str, int] = {}
+    for i in itens:
+        resumo[i["status"]] = resumo.get(i["status"], 0) + 1
+
+    return templates.TemplateResponse(request, "conferencia.html", {
+        "request": request,
+        "lote": lote,
+        "aguardando": [i for i in itens if i["status"] == "aguardando_aprovacao"],
+        "outros": [i for i in itens if i["status"] != "aguardando_aprovacao"],
+        "resumo": resumo,
+    })
+
+
+@app.post("/lotes/{lote_id}/publicar", response_class=HTMLResponse)
+async def publicar(request: Request, lote_id: int,
+                   aprovados: list[int] = Form(default=[]),
+                   confirmacao: str = Form("")):
+    """Publica de verdade. Exige a palavra PUBLICAR digitada pelo operador."""
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    if confirmacao.strip().upper() != "PUBLICAR":
+        raise HTTPException(
+            400,
+            "Confirmação incorreta. Digite PUBLICAR no campo para confirmar — "
+            "esta ação cria anúncios reais na sua conta do Mercado Livre."
+        )
+    if not aprovados:
+        raise HTTPException(400, "Nenhum item aprovado. Marque ao menos um.")
+
+    quantos = storage.definir_aprovacao(lote_id, aprovados)
+    log.info("Lote %s: publicando %s itens aprovados", lote_id, quantos)
+
+    resultados = await publicar_aprovados(lote_id)
+    storage.atualizar_status_lote(lote_id, "publicado")
 
     return templates.TemplateResponse(request, "resultado.html", {
         "request": request,
         "lote_id": lote_id,
-        "dry_run": dry_run,
         "resumo": resumir(resultados),
         "resultados": resultados,
     })

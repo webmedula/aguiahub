@@ -18,10 +18,11 @@
 <div class="card">
   <h2>Processar</h2>
   <div class="aviso">
-    Comece sempre em <strong>simulação</strong>. Ela consulta o catálogo do Mercado
-    Livre e mostra quantos itens teriam correspondência — sem criar nenhum anúncio.
+    Esta etapa <strong>não publica nada</strong>. Ela consulta o catálogo do
+    Mercado Livre e monta a tela de conferência, onde você vê a foto e a ficha
+    de cada produto antes de aprovar. Comece com poucos itens.
   </div>
-  <form method="post" action="/planilha/processar">
+  <form method="post" action="/planilha/analisar">
     <input type="hidden" name="arquivo_salvo" value="{{ arquivo }}">
     <input type="hidden" name="regra_preco" value="{{ regra_preco }}">
     <input type="hidden" name="percentual" value="{{ percentual }}">
@@ -34,15 +35,8 @@
         <label>Limite de itens (0 = sem limite)</label>
         <input type="number" name="limite" value="20" min="0">
       </div>
-      <div>
-        <label>Modo</label>
-        <select name="dry_run">
-          <option value="true">Simulação (não publica)</option>
-          <option value="false">Publicar de verdade</option>
-        </select>
-      </div>
     </div>
-    <p style="margin-top:14px"><button type="submit">Executar</button></p>
+    <p style="margin-top:14px"><button type="submit">Analisar catálogo</button></p>
   </form>
 </div>
 

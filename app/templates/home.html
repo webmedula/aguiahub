@@ -55,14 +55,12 @@
   <h2>Lotes anteriores</h2>
   {% if lotes %}
   <table>
-    <tr><th>#</th><th>Arquivo</th><th>Linhas</th><th>Modo</th><th>Status</th><th>Data</th></tr>
+    <tr><th>#</th><th>Arquivo</th><th>Linhas</th><th>Status</th><th>Data</th></tr>
     {% for l in lotes %}
     <tr>
-      <td><a href="/lotes/{{ l['id'] }}">{{ l['id'] }}</a></td>
+      <td><a href="/lotes/{{ l['id'] }}/conferencia">{{ l['id'] }}</a></td>
       <td>{{ l['arquivo'] }}</td>
       <td class="num">{{ l['total_linhas'] }}</td>
-      <td>{% if l['dry_run'] %}<span class="pill neutro">simulação</span>
-          {% else %}<span class="pill ok">real</span>{% endif %}</td>
       <td>{{ l['status'] }}</td>
       <td class="fraco">{{ l['criado_em'][:16].replace('T',' ') }}</td>
     </tr>
