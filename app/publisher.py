@@ -606,3 +606,90 @@ async def publicar_da_loja(item_id: int,
 
     return {"ok": True, "ml_item_id": ml_id, "permalink": criado.get("permalink"),
             "mensagem": f"Anúncio {ml_id} publicado."}
+
+
+COM_FOTO_PROPRIA = "foto_do_operador"
+
+
+async def publicar_com_fotos_proprias(item_id: int,
+                                      listing_type_id: str = "gold_special") -> dict:
+    """Publica anúncio próprio com as fotos que o operador tirou.
+
+    Caminho que não depende de nada de terceiros: nem catálogo do ML, nem
+    anúncio de outro vendedor, nem a loja. Foto da prateleira, título montado a
+    partir do ERP, categoria pelo preditor do Mercado Livre.
+    """
+    from app import fotos as mod_fotos
+
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    arquivos = mod_fotos.listar(item_id)
+    if not arquivos:
+        return {"ok": False, "mensagem": (
+            "Este item ainda não tem foto. Envie ao menos uma antes de publicar.")}
+
+    client = MLClient()
+    p = LinhaProduto(
+        aba="", linha=linha["linha"], codigo=linha["sku"] or "",
+        descricao=linha["descricao_erp"] or "",
+        quantidade=int(linha["quantidade"] or 1),
+        marca=linha["marca"] or "",
+        aplicacao=linha["aplicacao"] or "",
+    )
+    titulo = montar_titulo(p)
+
+    categoria = linha["catalog_category_id"] or await prever_categoria(client, titulo)
+    if not categoria:
+        return {"ok": False, "mensagem": (
+            f"Não consegui determinar a categoria do Mercado Livre para "
+            f"'{titulo}'. Sem categoria o ML recusa o anúncio.")}
+
+    # Sobe as imagens primeiro: se alguma falhar, nada é publicado pela metade.
+    ids: list[str] = []
+    for nome in arquivos[:mod_fotos.MAX_FOTOS]:
+        try:
+            pid = await client.enviar_foto(mod_fotos.ler(item_id, nome), nome)
+        except MLApiError as exc:
+            return {"ok": False, "mensagem": (
+                f"O Mercado Livre recusou a foto '{nome}': "
+                f"{exc.mensagem_amigavel()}")}
+        if pid:
+            ids.append(pid)
+
+    if not ids:
+        return {"ok": False, "mensagem": "Nenhuma foto foi aceita pelo Mercado Livre."}
+
+    payload = {
+        "site_id": get_settings().ml_site_id,
+        "title": titulo,
+        "category_id": categoria,
+        "price": float(linha["preco"] or 0),
+        "currency_id": "BRL",
+        "available_quantity": max(1, int(linha["quantidade"] or 1)),
+        "buying_mode": "buy_it_now",
+        "condition": "new",
+        "listing_type_id": listing_type_id,
+        "pictures": [{"id": i} for i in ids],
+        "attributes": _atributos(p),
+    }
+
+    try:
+        criado = await client.post("/items", payload)
+    except MLApiError as exc:
+        storage.atualizar_item(item_id, status=ERRO, erro=exc.mensagem_amigavel())
+        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+
+    ml_id = criado.get("id")
+    storage.atualizar_item(item_id, status=PUBLICADO, ml_item_id=ml_id,
+                           permalink=criado.get("permalink"))
+    try:
+        await client.post(f"/items/{ml_id}/description",
+                          {"plain_text": montar_descricao(p)})
+    except MLApiError as exc:
+        log.warning("Anúncio %s criado, descrição falhou: %s", ml_id,
+                    exc.mensagem_amigavel())
+
+    return {"ok": True, "ml_item_id": ml_id, "permalink": criado.get("permalink"),
+            "mensagem": f"Anúncio {ml_id} publicado com {len(ids)} foto(s)."}

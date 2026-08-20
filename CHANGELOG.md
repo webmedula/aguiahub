@@ -5,6 +5,36 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.10.0 — 20/08/2026
+
+**Foto tirada na hora, direto da fila.**
+
+O Mercado Livre fechou, um a um, todos os caminhos que dependiam de dados de
+terceiros: busca pública (403), leitura de anúncios de outros vendedores (403),
+e o `/products/search` que só devolve fichas antigas e inativas. Cada remendo
+durou até eles fecharem a porta seguinte.
+
+O que sobra funcionando é o que **não depende de ninguém**: anúncio próprio com
+foto própria. A loja da Águia cobre parte das peças; para o resto, agora a
+pessoa fotografa.
+
+- **Envio de fotos na tela da fila.** No celular o botão abre a câmera direto
+  (`capture="environment"`). Até 10 fotos por peça, 10 MB cada.
+- Prévia das fotos enviadas, com botão de apagar cada uma.
+- **Publicação com foto própria**: as imagens vão para o endpoint oficial de
+  upload do ML (`/pictures/items/upload`), e o anúncio é criado com os ids
+  devolvidos. Título montado a partir do ERP, categoria pelo preditor do ML,
+  preço e estoque da planilha.
+- As fotos ficam no volume do VPS, não no Mercado Livre, até a publicação. Isso
+  permite conferir antes, refazer se der erro, e não deixa imagem órfã na conta.
+- **Validações**: recusa arquivo vazio, arquivo que não é imagem (testado com
+  PDF renomeado), e acima de 10 MB. Nome de arquivo é sanitizado — testei com
+  `../../etc/passwd` e variantes, todos caem dentro da pasta do item.
+- Publicar continua exigindo a palavra `PUBLICAR` digitada.
+
+O vínculo por link do Mercado Livre continua na tela, funcionando quando
+funciona, conforme decidido — mas deixou de ser o caminho principal.
+
 ## v0.9.1 — 20/08/2026
 
 **Um caminho só.**

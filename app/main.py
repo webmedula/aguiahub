@@ -20,8 +20,10 @@ from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
 from app import loja
+from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
-                           publicar_aprovados, publicar_da_loja,
+                           publicar_aprovados, publicar_com_fotos_proprias,
+                           publicar_da_loja,
                            resumir, vincular_por_link, vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
@@ -381,6 +383,7 @@ async def fila(request: Request, lote_id: int):
         "item": item,
         "sugestao": sugestao,
         "da_loja": da_loja,
+        "fotos_proprias": mod_fotos.listar(item["id"]) if item else [],
         "progresso": storage.progresso_da_fila(lote_id),
     })
 
@@ -456,6 +459,63 @@ async def publicar_item_da_loja(item_id: int, lote_id: int = Form(...),
             "Esta ação cria um anúncio real na conta da Águia Parts."))
 
     resultado = await publicar_da_loja(item_id)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.post("/itens/{item_id}/fotos")
+async def enviar_fotos(item_id: int, lote_id: int = Form(...),
+                       arquivos: list[UploadFile] = File(...)):
+    """Recebe as fotos tiradas pelo operador."""
+    enviadas, problemas = 0, []
+    for arquivo in arquivos:
+        try:
+            mod_fotos.salvar(item_id, await arquivo.read(),
+                             arquivo.filename or "foto.jpg")
+            enviadas += 1
+        except mod_fotos.FotoInvalida as exc:
+            problemas.append(str(exc))
+
+    if not enviadas and problemas:
+        raise HTTPException(400, " ".join(problemas))
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.post("/itens/{item_id}/fotos/{nome}/apagar")
+async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...)):
+    try:
+        mod_fotos.apagar(item_id, nome)
+    except mod_fotos.FotoInvalida as exc:
+        raise HTTPException(400, str(exc))
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.get("/fotos/{item_id}/{nome}")
+async def ver_foto(item_id: int, nome: str):
+    """Serve a foto salva, para a prévia na tela."""
+    try:
+        caminho = mod_fotos.caminho_da_foto(item_id, nome)
+    except mod_fotos.FotoInvalida as exc:
+        raise HTTPException(400, str(exc))
+    if not caminho.is_file():
+        raise HTTPException(404, "Foto não encontrada.")
+    tipos = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+             ".webp": "image/webp", ".gif": "image/gif"}
+    return Response(caminho.read_bytes(),
+                    media_type=tipos.get(caminho.suffix.lower(), "image/jpeg"))
+
+
+@app.post("/itens/{item_id}/publicar-fotos")
+async def publicar_com_foto(item_id: int, lote_id: int = Form(...),
+                            confirmacao: str = Form("")):
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    if confirmacao.strip().upper() != "PUBLICAR":
+        raise HTTPException(400, (
+            "Para publicar de verdade, digite PUBLICAR no campo de confirmação. "
+            "Esta ação cria um anúncio real na conta da Águia Parts."))
+    resultado = await publicar_com_fotos_proprias(item_id)
     if not resultado["ok"]:
         raise HTTPException(400, resultado["mensagem"])
     return RedirectResponse(f"/fila/{lote_id}", status_code=303)

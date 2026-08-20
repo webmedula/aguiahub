@@ -170,6 +170,25 @@ class MLClient:
 
     # -- atalhos -----------------------------------------------------------
 
+    async def enviar_foto(self, conteudo: bytes, nome: str) -> str:
+        """Sobe uma imagem para o Mercado Livre e devolve o id dela.
+
+        O ML guarda a imagem e devolve um identificador que é usado no anúncio
+        (`pictures: [{"id": ...}]`). É o caminho oficial para foto própria —
+        não depende de a imagem estar publicada em algum site.
+        """
+        token = await self.token_valido()
+        url = f"{self._settings.ml_api_base}/pictures/items/upload"
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(
+                url,
+                headers={"Authorization": f"Bearer {token}"},
+                files={"file": (nome, conteudo)},
+            )
+        if resp.status_code >= 400:
+            raise MLApiError(resp.status_code, _corpo(resp), "/pictures/items/upload")
+        return (_corpo(resp) or {}).get("id", "")
+
     async def eu(self) -> dict:
         return await self.get("/users/me")
 

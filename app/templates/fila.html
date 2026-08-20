@@ -150,6 +150,67 @@
 </div>
 {% endif %}
 
+{% if fotos_proprias %}
+<div class="card" style="padding:26px;border-color:rgba(46,163,107,.5)">
+  <h2 style="font-size:15px">✓ Pronto para anunciar — fotos que você tirou</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    {% for f in fotos_proprias %}
+    <div style="position:relative">
+      <img src="/fotos/{{ item['id'] }}/{{ f }}" alt=""
+           style="width:130px;height:130px;object-fit:cover;background:#fff;
+                  border-radius:10px;border:1px solid var(--linha)">
+      <form method="post" action="/itens/{{ item['id'] }}/fotos/{{ f }}/apagar"
+            style="position:absolute;top:4px;right:4px">
+        <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+        <button type="submit" title="apagar esta foto"
+                style="background:rgba(0,0,0,.65);border:0;color:#fff;
+                       border-radius:50%;width:26px;height:26px;padding:0;
+                       cursor:pointer;font-size:15px;line-height:1">×</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="aviso">
+    O anúncio vai com estas {{ fotos_proprias|length }} foto(s), o título
+    montado a partir do ERP, preço de
+    R$ {{ '%.2f'|format(item['preco'] or 0) }} e {{ item['quantidade'] }}
+    unidade(s). Isso cria um anúncio REAL no Mercado Livre.
+  </div>
+  <form method="post" action="/itens/{{ item['id'] }}/publicar-fotos"
+        style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <div>
+      <label>Confirmação</label>
+      <input type="text" name="confirmacao" placeholder="digite PUBLICAR"
+             autocomplete="off" required style="font-size:16px;padding:11px">
+    </div>
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Publicar no Mercado Livre</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card" style="padding:26px">
+  <h2 style="font-size:15px">Não está na loja? Tire foto da peça</h2>
+  <p class="fraco" style="font-size:14px;margin-top:-6px">
+    Fotografe a peça na prateleira. Com foto própria o anúncio sai sem depender
+    de catálogo nem de anúncio de outro vendedor.
+  </p>
+  <form method="post" action="/itens/{{ item['id'] }}/fotos"
+        enctype="multipart/form-data"
+        style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <input type="file" name="arquivos" accept="image/*" capture="environment"
+           multiple required style="font-size:15px">
+    <button class="secundario" type="submit"
+            style="font-size:15px;padding:11px 18px">Enviar foto(s)</button>
+  </form>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    No celular, o botão abre a câmera. Até 10 fotos, 10 MB cada. Boa iluminação
+    e fundo neutro ajudam a vender.
+  </p>
+</div>
+
 <div class="card" style="padding:26px">
   <h2 style="font-size:15px">Achou a peça? Cole o link aqui</h2>
   <p class="fraco" style="font-size:14px;margin-top:-6px">
