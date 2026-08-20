@@ -5,6 +5,31 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.6.1 — 20/08/2026
+
+**Reconhecimento das páginas `/up/` e do parâmetro `wid`.**
+
+Descoberta que reinterpreta todo o diagnóstico anterior: a Bomba de Arla
+(código 5273337) tem **duas fichas** no Mercado Livre —
+
+- `MLB64325646`, sem ofertas ("indisponível no momento"), que é a que a busca
+  automática encontrava, e
+- `MLBU4286980046`, com anúncio ativo (`MLB4876653919`), vendendo agora.
+
+Ou seja: `status: inactive` na API significa *"nenhum vendedor com estoque"*, não
+"produto descontinuado". E o catálogo do ML para essas peças **não está morto** —
+a busca é que estava trazendo a ficha abandonada.
+
+- `extrair_id_anuncio` passa a reconhecer páginas `/up/MLBU...` (user product) e
+  o parâmetro `wid=` das URLs de busca.
+- **Prioridade nova:** quando a URL traz `wid`, ele vence. O `wid` aponta o
+  anúncio que está ganhando a vitrine — comprovadamente ativo — enquanto a mesma
+  peça pode ter também uma ficha abandonada.
+- Corrigido: `MLBU4286980046` não é mais truncado para `MLB4286980046`, que
+  seria outro produto.
+- Página `/up/` copiada direto do navegador, sem `wid`, agora funciona.
+- Quatro testes com a URL real do item 5273337.
+
 ## v0.6.0 — 20/08/2026
 
 **Travas contra casamento errado. Correção de um problema introduzido na v0.4.0.**

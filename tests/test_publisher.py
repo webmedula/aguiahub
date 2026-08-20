@@ -58,3 +58,72 @@ def test_campos_obrigatorios_sempre_presentes():
 def test_quantidade_zero_vira_um():
     p = LinhaProduto(aba="t", linha=1, codigo="X", descricao="Y", quantidade=0)
     assert montar_payload(p, 10.0)["available_quantity"] == 1
+
+
+# --- elegibilidade do produto de catálogo ---------------------------------
+
+from app.ml.catalog import CandidatoCatalogo, publicavel   # noqa: E402
+
+
+def cand(**kw):
+    base = dict(catalog_product_id="MLB43115763", nome="4 injetores Continental",
+                domain_id="MLB-INJECTORS", status="active", confianca="alta",
+                motivo="part number exato", category_id="MLB1747")
+    base.update(kw)
+    return CandidatoCatalogo(**base)
+
+
+def test_produto_ativo_com_categoria_e_publicavel():
+    ok, motivo = publicavel(cand())
+    assert ok and motivo == ""
+
+
+def test_produto_inativo_nao_e_publicavel():
+    """Regressão: o POST devolvia 'Product MLB43115763 is not active'.
+
+    O filtro status=active da busca não é confiável — o status do detalhe é.
+    """
+    ok, motivo = publicavel(cand(status="inactive"))
+    assert not ok
+    assert "inactive" in motivo
+
+
+def test_produto_sem_status_nao_e_publicavel():
+    ok, _ = publicavel(cand(status=None))
+    assert not ok
+
+
+def test_produto_sem_categoria_nao_e_publicavel():
+    ok, motivo = publicavel(cand(category_id=""))
+    assert not ok
+    assert "ategoria" in motivo
+
+
+# --- tradução de erros do Mercado Livre -----------------------------------
+
+from app.ml.client import MLApiError                        # noqa: E402
+
+
+def test_address_pending_vira_instrucao_acionavel():
+    """Regressão: o ML devolve só 'address_pending', sem dizer o que fazer."""
+    erro = MLApiError(400, {"message": "address_pending"}, "/items")
+    msg = erro.mensagem_amigavel()
+    assert "endereço" in msg.lower()
+    assert "Meu perfil" in msg
+
+
+def test_produto_inativo_traduzido():
+    erro = MLApiError(400, {"message": "Product MLB43115763 is not active"}, "/items")
+    assert "inativo" in erro.mensagem_amigavel()
+
+
+def test_erro_desconhecido_mantem_texto_original():
+    erro = MLApiError(400, {"message": "algo totalmente novo"}, "/items")
+    assert "algo totalmente novo" in erro.mensagem_amigavel()
+
+
+def test_causas_do_ml_sao_concatenadas():
+    erro = MLApiError(400, {"cause": [{"message": "campo A inválido"},
+                                      {"message": "campo B inválido"}]}, "/items")
+    msg = erro.mensagem_amigavel()
+    assert "campo A inválido" in msg and "campo B inválido" in msg

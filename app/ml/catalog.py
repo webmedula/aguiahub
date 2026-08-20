@@ -133,18 +133,45 @@ async def detalhe_produto(client: MLClient, catalog_product_id: str) -> dict:
     return await client.get(f"/products/{catalog_product_id}")
 
 
+# O 'wid' aponta o anúncio que está ganhando a vitrine — é a informação mais
+# confiável da URL, porque é um anúncio comprovadamente ativo.
+_RE_WID = re.compile(r"[?&#]wid=(ML[ABCMU]\d{6,})", re.IGNORECASE)
+# Página /up/ = "user product" do ML (identificador com U: MLBU...)
+_RE_USER_PRODUCT = re.compile(r"(ML[ABCMU]U)(\d{6,})", re.IGNORECASE)
+# Anúncio ou produto de catálogo comuns
 _RE_ANUNCIO = re.compile(r"(ML[ABCMU])-?(\d{6,})", re.IGNORECASE)
 
 
 def extrair_id_anuncio(texto: str) -> str:
-    """Tira o ID do anúncio de uma URL do Mercado Livre ou de um texto solto.
+    """Tira o identificador do Mercado Livre de uma URL ou de um texto solto.
 
-    Aceita as formas que o operador consegue copiar do navegador:
+    Aceita tudo que o operador consegue copiar do navegador:
         https://produto.mercadolivre.com.br/MLB-1234567890-bomba-arla-_JM
         https://www.mercadolivre.com.br/p/MLB12345678
+        https://www.mercadolivre.com.br/nome-da-peca/up/MLBU4286980046
+        https://...#...&wid=MLB4876653919&sid=search
         MLB1234567890
+
+    A ordem de preferência importa. O `wid` vem primeiro porque identifica um
+    anúncio que está de fato ativo — enquanto a mesma peça pode ter também uma
+    ficha de catálogo abandonada, que é justamente o que atrapalhou o
+    diagnóstico do item 5273337.
     """
-    achado = _RE_ANUNCIO.search(texto or "")
+    texto = texto or ""
+
+    achado = _RE_WID.search(texto)
+    if achado:
+        return achado.group(1).upper()
+
+    achado = _RE_ANUNCIO.search(texto)
+    if achado:
+        # cuidado: 'MLBU4286980046' não deve virar 'MLB4286980046'
+        casamento_u = _RE_USER_PRODUCT.search(texto)
+        if casamento_u and casamento_u.start() <= achado.start():
+            return f"{casamento_u.group(1).upper()}{casamento_u.group(2)}"
+        return f"{achado.group(1).upper()}{achado.group(2)}"
+
+    achado = _RE_USER_PRODUCT.search(texto)
     return f"{achado.group(1).upper()}{achado.group(2)}" if achado else ""
 
 
@@ -162,6 +189,20 @@ async def produto_do_anuncio(client: MLClient, referencia: str) -> dict:
             "Não consegui identificar o anúncio. Cole o link completo do "
             "Mercado Livre ou o código no formato MLB1234567890."
         )
+
+    # Páginas /up/ usam identificador de "user product" (MLBU...), que é
+    # consultado como produto, não como anúncio.
+    if ident.upper().startswith(("MLBU", "MLAU", "MLMU", "MLCU")):
+        produto = await client.get(f"/products/{ident}")
+        return {
+            "tipo": "produto_de_catalogo",
+            "catalog_product_id": ident,
+            "category_id": produto.get("category_id") or "",
+            "titulo": produto.get("name") or "",
+            "status": produto.get("status") or "",
+            "foto": _extrair_foto(produto),
+            "permalink": produto.get("permalink") or "",
+        }
 
     # /p/MLB123 é produto de catálogo; /MLB-123 é anúncio. Tentamos os dois.
     if "/p/" in (referencia or ""):
