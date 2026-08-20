@@ -5,6 +5,51 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.7.2 — 20/08/2026
+
+**Vínculo passa a tentar o produto de catálogo antes do anúncio.**
+
+Erro relatado ao vincular:
+`{"detail":"Mercado Livre: Access to the requested resource is forbidden"}`
+
+O Mercado Livre **bloqueia a leitura de anúncios de outros vendedores** pela API
+(403) — a mesma política que já havia derrubado a busca pública de anúncios.
+
+Pior: a mudança da v0.6.1, que passou a priorizar o `wid` da URL, apontava
+justamente para o endpoint bloqueado. O `wid` identifica um **anúncio**; o
+`/up/MLBU...` identifica o **produto de catálogo**, que continua acessível — e é
+dele que vêm foto, ficha técnica e categoria, que é o que realmente precisamos.
+
+- Nova função `extrair_referencias`, que devolve **todas** as referências da URL
+  na ordem de tentativa: produto de catálogo primeiro (`/up/`, depois `/p/`),
+  anúncio por último.
+- O vínculo tenta em cascata. Bloqueio em uma referência não interrompe: passa
+  para a próxima.
+- Se tudo estiver bloqueado, a mensagem diz **o que fazer**: copiar o link da
+  página do produto, clicando no nome do produto dentro do anúncio.
+- A tela da fila explica isso antes do erro acontecer, no próprio campo de colar.
+- Quatro testes cobrindo a ordem de tentativa.
+
+## v0.7.1 — 20/08/2026
+
+**Erro deixou de ser beco sem saída.**
+
+Relato real: ao clicar em "Vincular" na fila, a tela virava
+`{"detail":"Conecte a conta do Mercado Livre primeiro."}` — JSON cru, sem botão
+de voltar e sem como conectar. O botão de conectar existia, mas só na tela
+inicial, e de dentro do erro não havia caminho até ela.
+
+- Erros passam a ser **página HTML** com mensagem em português e três saídas:
+  *Conectar conta*, *Voltar* e *Ir para o início*.
+- Quando o problema é falta de conexão com o Mercado Livre, a própria página do
+  erro oferece o botão de conectar.
+- **Aviso no topo de todas as telas** quando não há conta conectada, com botão
+  de conectar. Antes, só a tela inicial mostrava isso — quem trabalhava na fila
+  não tinha como saber.
+
+Motivo de fundo: quem opera é a pessoa do estoque. Tela de JSON é aceitável para
+quem programa, não para quem está conferindo peça na prateleira.
+
 ## v0.7.0 — 20/08/2026
 
 **Triagem instantânea e fila de trabalho por valor.**

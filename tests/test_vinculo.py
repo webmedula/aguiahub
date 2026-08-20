@@ -76,3 +76,34 @@ def test_nao_confunde_mlbu_com_mlb():
 def test_wid_tem_prioridade_sobre_o_produto_da_url():
     url = "https://www.mercadolivre.com.br/x/up/MLBU1111111?wid=MLB2222222222"
     assert extrair_id_anuncio(url) == "MLB2222222222"
+
+
+# --- ordem de tentativa: produto antes de anúncio -------------------------
+
+from app.ml.catalog import extrair_referencias        # noqa: E402
+
+
+def test_produto_de_catalogo_e_tentado_antes_do_anuncio():
+    """Regressão: o ML devolve 403 ao ler anúncio de outro vendedor.
+
+    A página do produto (/p/ ou /up/) continua acessível — e é dela que vêm
+    foto, ficha e categoria. Então ela tem que ser tentada primeiro.
+    """
+    refs = extrair_referencias(URL_REAL)
+    assert refs[0] == ("produto", "MLBU4286980046")
+    assert ("anuncio", "MLB4876653919") in refs
+
+
+def test_link_p_vira_produto():
+    refs = extrair_referencias("https://www.mercadolivre.com.br/x/p/MLB19342323")
+    assert refs[0] == ("produto", "MLB19342323")
+
+
+def test_link_de_anuncio_puro_continua_sendo_anuncio():
+    refs = extrair_referencias(
+        "https://produto.mercadolivre.com.br/MLB-1234567890-bomba-_JM")
+    assert refs == [("anuncio", "MLB1234567890")]
+
+
+def test_sem_referencia_devolve_lista_vazia():
+    assert extrair_referencias("bomba de arla") == []

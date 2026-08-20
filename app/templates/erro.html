@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}Ops{% endblock %}
+{% block conteudo %}
+<div class="card" style="max-width:620px;margin:40px auto;padding:30px">
+  <h2 style="font-size:19px">Não deu para continuar</h2>
+  <p style="font-size:16px;line-height:1.6">{{ mensagem }}</p>
+
+  {% if precisa_conectar %}
+  <div class="aviso" style="margin-top:18px">
+    A conta do Mercado Livre não está conectada. Sem ela o sistema não consegue
+    consultar nem publicar nada.
+  </div>
+  <p><a class="botao" style="font-size:16px;padding:12px 20px"
+        href="/oauth/mercadolivre/login">Conectar conta do Mercado Livre</a></p>
+  {% endif %}
+
+  <p style="margin-top:22px">
+    <a class="botao secundario" href="javascript:history.back()">Voltar</a>
+    <a class="botao secundario" href="/">Ir para o início</a>
+  </p>
+</div>
+{% endblock %}

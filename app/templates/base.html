@@ -57,6 +57,17 @@
       <span style="font-size:11px;color:var(--fraco);border:1px solid var(--linha);border-radius:20px;padding:2px 8px;margin-left:6px">v{{ VERSAO }}</span></h1>
   <a href="/" class="fraco" style="font-size:13px">Início</a>
 </header>
-<main>{% block conteudo %}{% endblock %}</main>
+<main>
+{% if not conta_conectada() %}
+<div class="aviso" style="border-color:rgba(208,69,63,.4);
+     background:rgba(208,69,63,.1);display:flex;gap:14px;align-items:center;
+     flex-wrap:wrap">
+  <strong>A conta do Mercado Livre não está conectada.</strong>
+  <span class="fraco">Sem ela não dá para consultar nem publicar.</span>
+  <a class="botao" style="margin-left:auto"
+     href="/oauth/mercadolivre/login">Conectar agora</a>
+</div>
+{% endif %}
+{% block conteudo %}{% endblock %}</main>
 </body>
 </html>

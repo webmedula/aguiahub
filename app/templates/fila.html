@@ -109,6 +109,13 @@
 
 <div class="card" style="padding:26px">
   <h2 style="font-size:15px">Passo 2 — cole aqui o link que você encontrou</h2>
+  <div class="aviso" style="font-size:13px">
+    <strong>Copie o link da página do PRODUTO</strong>, não o do anúncio de um
+    vendedor. O endereço certo tem <code>/p/</code> ou <code>/up/</code> no meio.
+    Para chegar nele, clique no <strong>nome do produto</strong> dentro do
+    anúncio. O Mercado Livre não deixa este sistema ler anúncios de outros
+    vendedores.
+  </div>
   <form method="post" action="/itens/{{ item['id'] }}/vincular"
         style="display:flex;gap:10px;flex-wrap:wrap">
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">

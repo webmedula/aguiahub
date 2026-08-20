@@ -8,6 +8,7 @@ import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -34,6 +35,30 @@ app = FastAPI(title="Águiahub", version=VERSAO, docs_url="/api/docs")
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 templates.env.globals["VERSAO"] = VERSAO
+# usado pelo cabeçalho para avisar, em QUALQUER tela, que falta conectar
+templates.env.globals["conta_conectada"] = lambda: bool(storage.carregar_token())
+
+
+@app.exception_handler(HTTPException)
+async def erro_amigavel(request: Request, exc: HTTPException):
+    """Erro vira página com saída, não JSON cru.
+
+    Quem opera é a pessoa do estoque: uma tela de JSON sem botão de voltar é um
+    beco sem saída. Se o problema for falta de conexão com o ML, a própria
+    página oferece o botão para conectar.
+    """
+    if request.url.path.startswith("/api") or exc.status_code == 404 and \
+            request.headers.get("accept", "").startswith("application/json"):
+        return await http_exception_handler(request, exc)
+
+    mensagem = exc.detail if isinstance(exc.detail, str) else "Erro inesperado."
+    precisa_conectar = "Mercado Livre primeiro" in mensagem or not storage.carregar_token()
+    return templates.TemplateResponse(
+        request, "erro.html",
+        {"request": request, "mensagem": mensagem,
+         "precisa_conectar": precisa_conectar},
+        status_code=exc.status_code,
+    )
 
 
 ABERTAS = ("/health", "/entrar", "/static")

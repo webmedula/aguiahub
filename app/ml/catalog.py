@@ -142,6 +142,47 @@ _RE_USER_PRODUCT = re.compile(r"(ML[ABCMU]U)(\d{6,})", re.IGNORECASE)
 _RE_ANUNCIO = re.compile(r"(ML[ABCMU])-?(\d{6,})", re.IGNORECASE)
 
 
+def extrair_referencias(texto: str) -> list[tuple[str, str]]:
+    """Devolve [(tipo, id)] achados na URL, na ordem em que devemos TENTAR.
+
+    Produto de catálogo vem primeiro porque o Mercado Livre bloqueou a leitura
+    de anúncios de terceiros pela API (403 Forbidden). O anúncio (`wid`) fica
+    como último recurso: se a peça for do próprio vendedor, ele ainda funciona.
+    """
+    texto = texto or ""
+    achados: list[tuple[str, str]] = []
+
+    # 1. produto de catálogo do formato novo: /up/MLBU...
+    for m in _RE_USER_PRODUCT.finditer(texto):
+        achados.append(("produto", f"{m.group(1).upper()}{m.group(2)}"))
+
+    # 2. produto de catálogo do formato antigo: /p/MLB...
+    if "/p/" in texto:
+        m = re.search(r"/p/(ML[ABCMU]-?\d{6,})", texto, re.IGNORECASE)
+        if m:
+            achados.append(("produto", m.group(1).upper().replace("-", "")))
+
+    # 3. o anúncio apontado pelo wid
+    m = _RE_WID.search(texto)
+    if m:
+        achados.append(("anuncio", m.group(1).upper()))
+
+    # 4. qualquer outro ML... solto no texto
+    for m in _RE_ANUNCIO.finditer(texto):
+        ident = f"{m.group(1).upper()}{m.group(2)}"
+        # não confundir o miolo de 'MLBU123' com 'MLB123'
+        if any(ident in j for _, j in achados):
+            continue
+        achados.append(("anuncio", ident))
+
+    vistos, unicos = set(), []
+    for tipo, ident in achados:
+        if ident not in vistos:
+            vistos.add(ident)
+            unicos.append((tipo, ident))
+    return unicos
+
+
 def extrair_id_anuncio(texto: str) -> str:
     """Tira o identificador do Mercado Livre de uma URL ou de um texto solto.
 
@@ -176,59 +217,69 @@ def extrair_id_anuncio(texto: str) -> str:
 
 
 async def produto_do_anuncio(client: MLClient, referencia: str) -> dict:
-    """Dado o link (ou ID) de um anúncio do ML, descobre o produto de catálogo.
+    """Descobre o produto de catálogo a partir de um link do Mercado Livre.
 
-    Este é o caminho manual para quando a busca automática não acha a peça — e
-    hoje ele é essencial, porque o ML bloqueou a busca pública de anúncios.
-    O operador acha o anúncio no navegador, cola o link, e nós extraímos daqui o
-    `catalog_product_id` e a `category_id` corretos, direto da fonte.
+    Tenta as referências da URL em cascata, produto de catálogo primeiro. Isso
+    importa porque o ML passou a responder 403 na leitura de anúncios de outros
+    vendedores — o mesmo bloqueio que derrubou a busca pública. A página do
+    produto (`/p/` ou `/up/`) continua acessível e é o que realmente
+    precisamos, já que é dela que vêm foto, ficha e categoria.
     """
-    ident = extrair_id_anuncio(referencia)
-    if not ident:
+    referencias = extrair_referencias(referencia)
+    if not referencias:
         raise ValueError(
-            "Não consegui identificar o anúncio. Cole o link completo do "
-            "Mercado Livre ou o código no formato MLB1234567890."
+            "Não consegui identificar o anúncio nesse endereço. Copie o link "
+            "direto da página da peça no Mercado Livre."
         )
 
-    # Páginas /up/ usam identificador de "user product" (MLBU...), que é
-    # consultado como produto, não como anúncio.
-    if ident.upper().startswith(("MLBU", "MLAU", "MLMU", "MLCU")):
-        produto = await client.get(f"/products/{ident}")
-        return {
-            "tipo": "produto_de_catalogo",
-            "catalog_product_id": ident,
-            "category_id": produto.get("category_id") or "",
-            "titulo": produto.get("name") or "",
-            "status": produto.get("status") or "",
-            "foto": _extrair_foto(produto),
-            "permalink": produto.get("permalink") or "",
-        }
+    bloqueios: list[str] = []
 
-    # /p/MLB123 é produto de catálogo; /MLB-123 é anúncio. Tentamos os dois.
-    if "/p/" in (referencia or ""):
-        produto = await client.get(f"/products/{ident}")
-        return {
-            "tipo": "produto_de_catalogo",
-            "catalog_product_id": ident,
-            "category_id": produto.get("category_id") or "",
-            "titulo": produto.get("name") or "",
-            "status": produto.get("status") or "",
-            "foto": _extrair_foto(produto),
-            "permalink": produto.get("permalink") or "",
-        }
+    for tipo, ident in referencias:
+        try:
+            if tipo == "produto":
+                produto = await client.get(f"/products/{ident}")
+                return {
+                    "tipo": "produto_de_catalogo",
+                    "catalog_product_id": ident,
+                    "category_id": produto.get("category_id") or "",
+                    "titulo": produto.get("name") or "",
+                    "status": produto.get("status") or "",
+                    "foto": _extrair_foto(produto),
+                    "permalink": produto.get("permalink") or "",
+                }
 
-    anuncio = await client.get(f"/items/{ident}")
-    return {
-        "tipo": "anuncio",
-        "catalog_product_id": anuncio.get("catalog_product_id") or "",
-        "category_id": anuncio.get("category_id") or "",
-        "titulo": anuncio.get("title") or "",
-        "status": anuncio.get("status") or "",
-        "foto": (anuncio.get("thumbnail")
-                 or ((anuncio.get("pictures") or [{}])[0].get("url", ""))),
-        "permalink": anuncio.get("permalink") or "",
-        "preco": anuncio.get("price"),
-    }
+            anuncio = await client.get(f"/items/{ident}")
+            return {
+                "tipo": "anuncio",
+                "catalog_product_id": anuncio.get("catalog_product_id") or "",
+                "category_id": anuncio.get("category_id") or "",
+                "titulo": anuncio.get("title") or "",
+                "status": anuncio.get("status") or "",
+                "foto": (anuncio.get("thumbnail")
+                         or ((anuncio.get("pictures") or [{}])[0].get("url", ""))),
+                "permalink": anuncio.get("permalink") or "",
+                "preco": anuncio.get("price"),
+            }
+        except MLApiError as exc:
+            if exc.status in (401, 403):
+                bloqueios.append(ident)
+                continue
+            if exc.status == 404:
+                continue
+            raise
+
+    if bloqueios:
+        raise ValueError(
+            "O Mercado Livre não deixa a aplicação ler anúncios de outros "
+            "vendedores (erro 403). Em vez do link do anúncio, copie o link da "
+            "PÁGINA DO PRODUTO — o endereço que tem /p/ ou /up/ no meio. "
+            "Para chegar nela, clique no nome do produto dentro do anúncio."
+        )
+
+    raise ValueError(
+        "Não encontrei esse produto no Mercado Livre. Confira se o link está "
+        "completo e se a página ainda existe."
+    )
 
 
 def _extrair_foto(produto: dict) -> str:
