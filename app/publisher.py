@@ -17,6 +17,7 @@ deste código.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
@@ -27,7 +28,7 @@ from app.abreviacoes import expandir
 from app.ml.catalog import (CandidatoCatalogo, anuncios_ativos,
                             buscar_no_catalogo, categoria_e_de_autopecas,
                             enriquecer_candidato, escolher_publicavel,
-                            produto_do_anuncio, publicavel)
+                            prever_categoria, produto_do_anuncio, publicavel)
 from app.ml.client import MLClient, MLApiError
 from app.sheets import LinhaProduto, calcular_preco, montar_descricao, montar_titulo
 
@@ -397,3 +398,116 @@ def resumir(resultados: list) -> dict:
         status = r.status if hasattr(r, "status") else r.get("status")
         resumo[status] = resumo.get(status, 0) + 1
     return resumo
+
+
+# ---------------------------------------------------------------------------
+# Publicação com fotos da própria loja
+# ---------------------------------------------------------------------------
+
+DA_LOJA = "pronto_com_fotos"      # tem foto própria: pode virar anúncio direto
+
+
+async def vincular_produto_da_loja(item_id: int, referencia: str) -> dict:
+    """Puxa nome, descrição e FOTOS do site da Águia para o item da fila.
+
+    É o caminho que dispensa o catálogo do Mercado Livre: com foto própria,
+    o anúncio pode ser criado do zero. Nada de imagem de terceiro.
+    """
+    from app import loja
+
+    referencia = (referencia or "").strip()
+    if referencia.startswith("http"):
+        produto = await loja.buscar_por_url(referencia)
+    else:
+        achados = await loja.buscar_por_codigo(referencia)
+        produto = achados[0] if achados else None
+
+    if produto is None:
+        return {"ok": False, "mensagem": "Não achei esse produto na loja da Águia."}
+
+    if not produto.publicavel:
+        return {"ok": False, "mensagem": (
+            f"'{produto.nome[:60]}' está na loja mas sem foto cadastrada. "
+            "O Mercado Livre exige pelo menos uma imagem.")}
+
+    storage.atualizar_dados_catalogo(
+        item_id,
+        status=DA_LOJA,
+        loja_url=produto.url,
+        loja_nome=produto.nome,
+        loja_sku=produto.sku,
+        loja_preco=produto.preco,
+        loja_fotos=json.dumps(produto.fotos, ensure_ascii=False),
+        loja_descricao=produto.descricao,
+        decidido_em=datetime.now(timezone.utc).isoformat(),
+        erro=None if produto.em_estoque else
+             "atenção: a loja marca este produto como fora de estoque",
+    )
+    return {"ok": True,
+            "mensagem": f"{produto.nome[:70]} — {len(produto.fotos)} foto(s).",
+            "produto": produto}
+
+
+async def publicar_da_loja(item_id: int,
+                           listing_type_id: str = "gold_special") -> dict:
+    """Cria um anúncio PRÓPRIO no ML usando as fotos da loja da Águia."""
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    fotos = json.loads(linha["loja_fotos"] or "[]")
+    if not fotos:
+        return {"ok": False, "mensagem": "Este item não tem fotos da loja."}
+
+    client = MLClient()
+    titulo = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+
+    categoria = linha["catalog_category_id"]
+    if not categoria:
+        categoria = await prever_categoria(client, titulo)
+    if not categoria:
+        return {"ok": False, "mensagem": (
+            "Não consegui determinar a categoria do Mercado Livre para "
+            f"'{titulo}'. Sem categoria o ML recusa o anúncio.")}
+
+    p = LinhaProduto(
+        aba="", linha=linha["linha"], codigo=linha["sku"] or "",
+        descricao=linha["descricao_erp"] or "",
+        quantidade=int(linha["quantidade"] or 1),
+        marca=linha["marca"] or "",
+    )
+
+    payload = {
+        "site_id": get_settings().ml_site_id,
+        "title": titulo,
+        "category_id": categoria,
+        "price": float(linha["preco"] or 0),
+        "currency_id": "BRL",
+        "available_quantity": max(1, int(linha["quantidade"] or 1)),
+        "buying_mode": "buy_it_now",
+        "condition": "new",
+        "listing_type_id": listing_type_id,
+        # As imagens são da própria Águia; o ML baixa a partir da URL.
+        "pictures": [{"source": url} for url in fotos[:10]],
+        "attributes": _atributos(p),
+    }
+
+    try:
+        criado = await client.post("/items", payload)
+    except MLApiError as exc:
+        storage.atualizar_item(item_id, status=ERRO, erro=exc.mensagem_amigavel())
+        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+
+    ml_id = criado.get("id")
+    storage.atualizar_item(item_id, status=PUBLICADO, ml_item_id=ml_id,
+                           permalink=criado.get("permalink"))
+
+    descricao = linha["loja_descricao"] or montar_descricao(p)
+    try:
+        await client.post(f"/items/{ml_id}/description", {"plain_text": descricao})
+    except MLApiError as exc:
+        log.warning("Anúncio %s criado, descrição falhou: %s", ml_id,
+                    exc.mensagem_amigavel())
+
+    return {"ok": True, "ml_item_id": ml_id, "permalink": criado.get("permalink"),
+            "mensagem": f"Anúncio {ml_id} publicado."}

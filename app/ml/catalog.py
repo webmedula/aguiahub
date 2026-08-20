@@ -248,7 +248,19 @@ async def produto_do_anuncio(client: MLClient, referencia: str) -> dict:
                     "permalink": produto.get("permalink") or "",
                 }
 
-            anuncio = await client.get(f"/items/{ident}")
+            # O ML bloqueia a leitura completa de anúncios de terceiros, mas
+            # às vezes libera campos específicos. Tentamos o mínimo necessário
+            # antes de desistir e mandar o operador navegar até o produto.
+            try:
+                anuncio = await client.get(
+                    f"/items/{ident}",
+                    params={"attributes": "id,catalog_product_id,category_id,"
+                                          "title,thumbnail,permalink,status,price"},
+                )
+            except MLApiError as parcial:
+                if parcial.status not in (401, 403):
+                    raise
+                anuncio = await client.get(f"/items/{ident}")
             return {
                 "tipo": "anuncio",
                 "catalog_product_id": anuncio.get("catalog_product_id") or "",
@@ -408,6 +420,26 @@ async def categoria_e_de_autopecas(client: MLClient, category_id: str) -> tuple[
     nomes = " > ".join(c.get("name", "") for c in caminho[:3])
     return False, (f"categoria do ML é '{nomes}', fora de acessórios para "
                    f"veículos — provável casamento errado")
+
+
+async def prever_categoria(client: MLClient, titulo: str) -> str:
+    """Usa o preditor do ML para achar a categoria a partir do título.
+
+    Necessário no anúncio próprio: não há produto de catálogo de onde herdar.
+    """
+    if not titulo.strip():
+        return ""
+    s = get_settings()
+    try:
+        sugestoes = await client.get(
+            f"/sites/{s.ml_site_id}/domain_discovery/search",
+            params={"limit": 1, "q": titulo[:120]},
+        )
+    except MLApiError:
+        return ""
+    if isinstance(sugestoes, list) and sugestoes:
+        return sugestoes[0].get("category_id") or ""
+    return ""
 
 
 def publicavel(cand: CandidatoCatalogo) -> tuple[bool, str]:

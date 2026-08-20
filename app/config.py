@@ -34,6 +34,13 @@ class Settings:
         return {c.strip().upper() for c in self.ml_categorias_raiz.split(",")
                 if c.strip()}
 
+    # --- Loja própria (WooCommerce) ---
+    # De onde vêm foto, descrição e ficha quando a peça já está no site da
+    # Águia. São imagens próprias — é o caminho limpo para publicar sem
+    # depender do catálogo do ML.
+    loja_base_url: str = os.getenv("LOJA_BASE_URL",
+                                   "https://loja.aguiadiesel.com.br")
+
     # --- Aplicação ---
     secret_key: str = os.getenv("SECRET_KEY", "troque-isto-em-producao")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/aguiahub.db")

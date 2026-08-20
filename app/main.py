@@ -19,8 +19,10 @@ from app.version import VERSAO, LANCADA_EM
 from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
-from app.publisher import (analisar_lote, publicar_aprovados, resumir,
-                           vincular_por_link)
+from app import loja
+from app.publisher import (analisar_lote, publicar_aprovados, publicar_da_loja,
+                           resumir, vincular_por_link,
+                           vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
 from app.triagem import triar_planilha, resumo as resumo_triagem
@@ -37,6 +39,7 @@ templates = Jinja2Templates(directory=str(BASE / "templates"))
 templates.env.globals["VERSAO"] = VERSAO
 # usado pelo cabeçalho para avisar, em QUALQUER tela, que falta conectar
 templates.env.globals["conta_conectada"] = lambda: bool(storage.carregar_token())
+templates.env.filters["fromjson"] = lambda t: __import__("json").loads(t or "[]")
 
 
 @app.exception_handler(HTTPException)
@@ -349,8 +352,17 @@ async def fila(request: Request, lote_id: int):
 
     item = storage.proximo_da_fila(lote_id)
     sugestao = None
+    da_loja: list = []
 
-    if item is not None and storage.carregar_token():
+    # A loja da Águia vem primeiro: se a peça está lá, temos foto própria e o
+    # anúncio sai sem depender do catálogo do Mercado Livre.
+    if item is not None:
+        try:
+            da_loja = await loja.buscar_por_codigo(item["sku"] or "")
+        except Exception as exc:                       # noqa: BLE001
+            log.warning("Busca na loja falhou para %s: %s", item["sku"], exc)
+
+    if item is not None and not da_loja and storage.carregar_token():
         # Consulta o catálogo só agora, para ESTE item. Se falhar, a tela
         # continua útil: a pessoa procura no ML pelo botão e cola o link.
         try:
@@ -367,8 +379,39 @@ async def fila(request: Request, lote_id: int):
         "lote": lote,
         "item": item,
         "sugestao": sugestao,
+        "da_loja": da_loja,
         "progresso": storage.progresso_da_fila(lote_id),
     })
+
+
+@app.post("/itens/{item_id}/vincular-loja")
+async def vincular_loja(item_id: int, referencia: str = Form(...),
+                        lote_id: int = Form(...)):
+    """Puxa nome, descrição e fotos do site da Águia para o item."""
+    try:
+        resultado = await vincular_produto_da_loja(item_id, referencia)
+    except loja.LojaError as exc:
+        raise HTTPException(400, str(exc))
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.post("/itens/{item_id}/publicar-loja")
+async def publicar_item_da_loja(item_id: int, lote_id: int = Form(...),
+                                confirmacao: str = Form("")):
+    """Cria o anúncio no ML com as fotos da loja. Exige confirmação digitada."""
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    if confirmacao.strip().upper() != "PUBLICAR":
+        raise HTTPException(400, (
+            "Para publicar de verdade, digite PUBLICAR no campo de confirmação. "
+            "Esta ação cria um anúncio real na conta da Águia Parts."))
+
+    resultado = await publicar_da_loja(item_id)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
 
 
 @app.post("/itens/{item_id}/decidir")

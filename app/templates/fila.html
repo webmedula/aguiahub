@@ -61,8 +61,101 @@
   </table>
 </div>
 
+{% if item['loja_fotos'] %}
+{% set fotos = item['loja_fotos'] | fromjson %}
+<div class="card" style="padding:26px;border-color:rgba(46,163,107,.5)">
+  <h2 style="font-size:15px">✓ Pronto para anunciar — dados da loja da Águia</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+    {% for f in fotos[:5] %}
+    <img src="{{ f }}" alt="" loading="lazy"
+         style="width:130px;height:130px;object-fit:contain;background:#fff;
+                border-radius:10px;border:1px solid var(--linha)">
+    {% endfor %}
+  </div>
+  <div style="font-size:18px;font-weight:600;margin-bottom:6px">
+    {{ item['loja_nome'] }}</div>
+  <p class="fraco" style="font-size:13px">
+    {{ fotos|length }} foto(s) · <a href="{{ item['loja_url'] }}" target="_blank"
+    rel="noopener">ver na loja ↗</a>
+    {% if item['erro'] %}<br><span style="color:#e3b45c">{{ item['erro'] }}</span>{% endif %}
+  </p>
+
+  <div class="aviso">
+    Ao publicar, o anúncio vai com <strong>as fotos e a descrição da loja da
+    Águia</strong>, o preço de R$ {{ '%.2f'|format(item['preco'] or 0) }} e
+    {{ item['quantidade'] }} unidade(s). Isso cria um anúncio REAL no Mercado
+    Livre. Digite PUBLICAR para confirmar.
+  </div>
+  <form method="post" action="/itens/{{ item['id'] }}/publicar-loja"
+        style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <div>
+      <label>Confirmação</label>
+      <input type="text" name="confirmacao" placeholder="digite PUBLICAR"
+             autocomplete="off" required style="font-size:16px;padding:11px">
+    </div>
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Publicar no Mercado Livre</button>
+  </form>
+</div>
+{% endif %}
+
+{% if da_loja %}
+<div class="card" style="padding:26px;border-color:rgba(46,163,107,.4)">
+  <h2 style="font-size:15px">Encontrei esta peça na loja da Águia</h2>
+  <p class="fraco" style="font-size:14px;margin-top:-6px">
+    Confira se é a mesma peça. Usando a loja, o anúncio sai com as
+    <strong>nossas próprias fotos</strong> — sem depender do Mercado Livre.
+  </p>
+  {% for p in da_loja %}
+  <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;
+              padding:14px 0;border-top:1px solid var(--linha)">
+    {% if p.fotos %}
+    <img src="{{ p.fotos[0] }}" alt=""
+         style="width:150px;height:150px;object-fit:contain;background:#fff;
+                border-radius:10px;border:1px solid var(--linha)">
+    {% endif %}
+    <div style="flex:1;min-width:260px">
+      <div style="font-size:17px;font-weight:600">{{ p.nome }}</div>
+      <p class="fraco" style="font-size:13px;margin:4px 0">
+        código {{ p.sku }} · R$ {{ '%.2f'|format(p.preco) }} na loja ·
+        {{ p.fotos|length }} foto(s)
+        {% if not p.em_estoque %}· <span style="color:#e3b45c">fora de estoque
+        na loja</span>{% endif %}
+        <br><a href="{{ p.url }}" target="_blank" rel="noopener">ver na loja ↗</a>
+      </p>
+      <form method="post" action="/itens/{{ item['id'] }}/vincular-loja">
+        <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+        <input type="hidden" name="referencia" value="{{ p.url }}">
+        <button type="submit" style="font-size:16px;padding:11px 18px"
+                {% if not p.fotos %}disabled{% endif %}>
+          Sim, é esta peça — usar dados da loja</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="card" style="padding:20px">
+  <h2 style="font-size:15px">Está na loja da Águia mas não apareceu acima?</h2>
+  <p class="fraco" style="font-size:13px;margin-top:-6px">
+    Procure a peça em <a href="https://loja.aguiadiesel.com.br" target="_blank"
+    rel="noopener">loja.aguiadiesel.com.br</a> e cole aqui o link dela.
+  </p>
+  <form method="post" action="/itens/{{ item['id'] }}/vincular-loja"
+        style="display:flex;gap:10px;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <input type="text" name="referencia" required
+           placeholder="https://loja.aguiadiesel.com.br/produto/..."
+           style="flex:1;min-width:300px;font-size:15px;padding:11px">
+    <button class="secundario" type="submit"
+            style="font-size:15px;padding:11px 18px">Buscar na loja</button>
+  </form>
+</div>
+
 <div class="card" style="padding:26px">
-  <h2 style="font-size:15px">Passo 1 — procure esta peça no Mercado Livre</h2>
+  <h2 style="font-size:15px">Não está na loja? Procure no Mercado Livre</h2>
   <p class="fraco" style="font-size:14px;margin-top:-6px">
     Clique no botão, veja se encontra a mesma peça, e copie o link do anúncio.
   </p>
@@ -110,19 +203,30 @@
 <div class="card" style="padding:26px">
   <h2 style="font-size:15px">Passo 2 — cole aqui o link que você encontrou</h2>
   <div class="aviso" style="font-size:13px">
-    <strong>Copie o link da página do PRODUTO</strong>, não o do anúncio de um
-    vendedor. O endereço certo tem <code>/p/</code> ou <code>/up/</code> no meio.
-    Para chegar nele, clique no <strong>nome do produto</strong> dentro do
-    anúncio. O Mercado Livre não deixa este sistema ler anúncios de outros
-    vendedores.
+    <strong>Olhe a barra de endereço antes de copiar.</strong>
+    <table style="font-size:13px;margin-top:8px">
+      <tr><td style="color:#5fd39b;width:24px">✓</td>
+          <td><code>.../up/MLBU4286980046</code></td>
+          <td class="fraco">página do produto — pode copiar</td></tr>
+      <tr><td style="color:#5fd39b">✓</td>
+          <td><code>.../p/MLB19342323</code></td>
+          <td class="fraco">página do produto — pode copiar</td></tr>
+      <tr><td style="color:#e88a84">✗</td>
+          <td><code>.../MLB-1234567890-...-_JM</code></td>
+          <td class="fraco">anúncio de um vendedor — não serve</td></tr>
+    </table>
+    <p style="margin:8px 0 0">
+      Caiu num anúncio? Clique no <strong>nome do produto</strong> na página
+      (ou em “outros vendedores” / “mais opções de compra”) — o endereço muda
+      para o da página do produto.</p>
   </div>
   <form method="post" action="/itens/{{ item['id'] }}/vincular"
         style="display:flex;gap:10px;flex-wrap:wrap">
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
     <input type="text" name="referencia" required autofocus
-           placeholder="cole aqui o endereço do anúncio"
+           placeholder="cole aqui o endereço da página do produto"
            style="flex:1;min-width:280px;font-size:16px;padding:12px">
-    <button type="submit" style="font-size:16px;padding:12px 20px">Usar este anúncio</button>
+    <button type="submit" style="font-size:16px;padding:12px 20px">Usar este produto</button>
   </form>
 </div>
 

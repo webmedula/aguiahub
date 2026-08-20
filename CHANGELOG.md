@@ -5,6 +5,56 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.8.0 — 20/08/2026
+
+**A loja da Águia como origem das fotos. Resolve o problema que travava o projeto.**
+
+O Mercado Livre exige pelo menos uma imagem por anúncio, e essa era a barreira
+desde o primeiro dia. O catálogo do ML se mostrou um caminho estreito: a busca
+da API alcança só as fichas antigas (formato MLB), o ML migrou os produtos ativos
+para MLBU, e bloqueou a leitura de anúncios de terceiros.
+
+A saída veio de fora do Mercado Livre: **a Águia já tem foto, descrição e ficha
+das peças na própria loja**. São imagens próprias — nenhuma questão de direito
+autoral, nenhuma dependência de catálogo, nenhuma sessão de fotos.
+
+- Novo módulo `app/loja.py`, lendo a **Store API do WooCommerce**
+  (`/wp-json/wc/store/v1/products`). JSON estruturado, e não HTML — não quebra
+  quando o tema do site muda.
+- Busca por **código** (SKU exato, depois busca livre) e por **link da página**.
+- A fila procura na loja **antes** do catálogo do ML. Achando, mostra as fotos
+  grandes para o operador conferir e um botão para usar aqueles dados.
+- Se a peça está na loja mas não apareceu na busca automática, há um campo para
+  colar o link direto.
+- **Publicação com foto própria** (`publicar_da_loja`): anúncio próprio no ML
+  com as imagens da loja, título e descrição do site, preço e estoque do ERP, e
+  categoria obtida pelo preditor do Mercado Livre.
+- Item sem foto na loja é barrado com mensagem clara — o ML recusaria de todo
+  jeito.
+- Avisa quando a loja marca o produto como fora de estoque, já que o ERP pode
+  discordar.
+- Publicar exige a palavra `PUBLICAR` digitada, como no resto do sistema.
+- Doze testes sobre o payload real da loja: preço em centavos (`"360000"` →
+  R$ 3.600,00), entidades HTML no nome (`&#8211;`), descrição HTML virando texto
+  simples, e todas as fotos capturadas.
+
+Nova variável: `LOJA_BASE_URL` (padrão `https://loja.aguiadiesel.com.br`).
+
+## v0.7.3 — 20/08/2026
+
+**Instruções visuais de qual link copiar, e mais uma tentativa antes de desistir.**
+
+- A tela da fila mostra agora uma tabelinha com os três padrões de endereço —
+  `/up/...` ✓, `/p/...` ✓, `MLB-...-_JM` ✗ — em vez de descrever em texto corrido.
+  Quem opera confere na barra de endereço antes de copiar.
+- Explica como sair de um anúncio e chegar na página do produto: clicar no nome
+  do produto, ou em "outros vendedores".
+- **Nova tentativa antes de desistir:** quando a leitura completa do anúncio é
+  bloqueada (403), o sistema tenta ler só os campos necessários
+  (`catalog_product_id`, `category_id`, título, foto). Alguns bloqueios do ML são
+  por recurso inteiro, outros não — não custa nada tentar antes de mandar a
+  pessoa navegar.
+
 ## v0.7.2 — 20/08/2026
 
 **Vínculo passa a tentar o produto de catálogo antes do anúncio.**

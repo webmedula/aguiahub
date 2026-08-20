@@ -77,6 +77,12 @@ _MIGRACOES = {
         "qualidade_codigo":   "TEXT",
         "aplicacao":          "TEXT",
         "decidido_em":        "TEXT",
+        "loja_url":           "TEXT",
+        "loja_nome":          "TEXT",
+        "loja_sku":           "TEXT",
+        "loja_preco":         "REAL",
+        "loja_fotos":         "TEXT",
+        "loja_descricao":     "TEXT",
     },
 }
 
@@ -215,7 +221,9 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
     permitidos = {"descricao_erp", "marca", "quantidade", "preco", "confianca",
                   "catalog_product_id", "catalog_nome", "catalog_foto",
                   "catalog_permalink", "catalog_atributos", "catalog_category_id",
-                  "status", "erro", "valor", "qualidade_codigo", "aplicacao"}
+                  "status", "erro", "valor", "qualidade_codigo", "aplicacao",
+                  "loja_url", "loja_nome", "loja_sku", "loja_preco",
+                  "loja_fotos", "loja_descricao"}
     for chave, valor in extras.items():
         if chave in permitidos and valor is not None:
             campos[chave] = (json.dumps(valor, ensure_ascii=False)
@@ -264,7 +272,9 @@ def atualizar_dados_catalogo(item_id: int, **campos) -> None:
     """Atualiza as colunas de catálogo de um item (usado no vínculo manual)."""
     permitidos = {"status", "confianca", "catalog_product_id", "catalog_nome",
                   "catalog_foto", "catalog_permalink", "catalog_category_id",
-                  "catalog_atributos", "erro", "preco", "decidido_em"}
+                  "catalog_atributos", "erro", "preco", "decidido_em",
+                  "loja_url", "loja_nome", "loja_sku", "loja_preco",
+                  "loja_fotos", "loja_descricao"}
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
         return
