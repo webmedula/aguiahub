@@ -17,10 +17,12 @@ from app.config import get_settings
 from app.version import VERSAO, LANCADA_EM
 from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
+from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
 from app.publisher import (analisar_lote, publicar_aprovados, resumir,
                            vincular_por_link)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
+from app.triagem import triar_planilha, resumo as resumo_triagem
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -28,11 +30,51 @@ log = logging.getLogger("aguiahub")
 
 s = get_settings()
 app = FastAPI(title="Águiahub", version=VERSAO, docs_url="/api/docs")
-app.add_middleware(SessionMiddleware, secret_key=s.secret_key, https_only=True)
 
 BASE = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 templates.env.globals["VERSAO"] = VERSAO
+
+
+ABERTAS = ("/health", "/entrar", "/static")
+
+
+@app.middleware("http")
+async def exigir_senha(request: Request, call_next):
+    """Protege a aplicação com uma senha única, se APP_PASSWORD estiver definida.
+
+    Desligado por padrão (variável vazia), conforme escolha do cliente. Basta
+    definir APP_PASSWORD no EasyPanel para ativar — a pessoa digita uma vez por
+    navegador e a sessão dura.
+
+    Importa porque a URL é pública na internet e a aplicação publica anúncios
+    reais: sem senha, quem tiver o endereço pode anunciar na conta da Águia.
+    """
+    if not s.app_password or request.url.path.startswith(ABERTAS):
+        return await call_next(request)
+    if request.session.get("autenticado"):
+        return await call_next(request)
+    return RedirectResponse("/entrar", status_code=303)
+
+
+# A sessão é registrada depois da checagem acima de propósito: no Starlette o
+# middleware registrado por último é o mais externo, então assim a sessão já
+# está disponível quando `exigir_senha` roda.
+app.add_middleware(SessionMiddleware, secret_key=s.secret_key, https_only=True)
+
+
+@app.get("/entrar", response_class=HTMLResponse)
+async def form_entrar(request: Request, erro: str = ""):
+    return templates.TemplateResponse(request, "entrar.html",
+                                      {"request": request, "erro": erro})
+
+
+@app.post("/entrar")
+async def entrar(request: Request, senha: str = Form(...)):
+    if s.app_password and secrets.compare_digest(senha, s.app_password):
+        request.session["autenticado"] = True
+        return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/entrar?erro=1", status_code=303)
 
 
 @app.on_event("startup")
@@ -222,6 +264,112 @@ async def conferencia(request: Request, lote_id: int):
         "outros": [i for i in itens if i["status"] != "aguardando_aprovacao"],
         "resumo": resumo,
     })
+
+
+# ---------------------------------------------------------------------------
+# Triagem e fila de trabalho
+# ---------------------------------------------------------------------------
+
+@app.post("/planilha/triagem")
+async def triagem(request: Request, arquivo_salvo: str = Form(...),
+                  regra_preco: str = Form("preco_publico"),
+                  percentual: float = Form(0.0),
+                  abas: str = Form("")):
+    """Classifica a planilha inteira SEM consultar o Mercado Livre.
+
+    Consultar o ML para 1.687 itens custaria milhares de requisições só para
+    descobrir que a maioria nem tem código utilizável. A consulta acontece
+    depois, um item por vez, quando o operador chega nele.
+    """
+    caminho = Path(s.data_dir) / "uploads" / Path(arquivo_salvo).name
+    if not caminho.exists():
+        raise HTTPException(404, "Planilha não encontrada — envie novamente.")
+
+    filtro = [a.strip() for a in abas.split("|") if a.strip()] or None
+    try:
+        itens = ler_planilha(caminho, filtro)
+    except FormatoNaoSuportado as exc:
+        raise HTTPException(400, str(exc))
+
+    triados = triar_planilha(itens)
+    lote_id = storage.criar_lote(arquivo_salvo, len(triados), True,
+                                 {"regra_preco": regra_preco,
+                                  "percentual": percentual, "tipo": "fila"})
+
+    for t in triados:
+        storage.registrar_item(
+            lote_id, t.item.linha, t.item.codigo, montar_titulo(t.item),
+            payload={},
+            status="na_fila" if t.pronto else "sem_dado",
+            erro="; ".join(t.impedimentos) or None,
+            descricao_erp=t.item.descricao,
+            marca=t.item.marca,
+            aplicacao=t.item.aplicacao,
+            quantidade=t.item.quantidade,
+            preco=calcular_preco(t.item, regra_preco, percentual),
+            valor=t.valor,
+            qualidade_codigo=t.qualidade,
+        )
+
+    storage.atualizar_status_lote(lote_id, "fila")
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.get("/fila/{lote_id}", response_class=HTMLResponse)
+async def fila(request: Request, lote_id: int):
+    """Uma peça por tela, sempre a de maior valor ainda pendente."""
+    lote = storage.lote(lote_id)
+    if not lote:
+        raise HTTPException(404, "Lote não encontrado.")
+
+    item = storage.proximo_da_fila(lote_id)
+    sugestao = None
+
+    if item is not None and storage.carregar_token():
+        # Consulta o catálogo só agora, para ESTE item. Se falhar, a tela
+        # continua útil: a pessoa procura no ML pelo botão e cola o link.
+        try:
+            candidatos = await buscar_no_catalogo(
+                MLClient(), item["sku"] or "", item["descricao_erp"] or "")
+            if candidatos:
+                melhor, _ = await escolher_publicavel(MLClient(), candidatos)
+                sugestao = melhor
+        except Exception as exc:                       # noqa: BLE001
+            log.warning("Busca do item %s falhou: %s", item["id"], exc)
+
+    return templates.TemplateResponse(request, "fila.html", {
+        "request": request,
+        "lote": lote,
+        "item": item,
+        "sugestao": sugestao,
+        "progresso": storage.progresso_da_fila(lote_id),
+    })
+
+
+@app.post("/itens/{item_id}/decidir")
+async def decidir(item_id: int, decisao: str = Form(...), lote_id: int = Form(...)):
+    """Registra a decisão do operador e passa para a próxima peça."""
+    mapa = {
+        "nao_achei": ("nao_encontrado",
+                      "operador procurou no ML e não encontrou a peça"),
+        "duvida": ("em_duvida",
+                   "operador ficou em dúvida — separado para revisão"),
+        "pular": ("na_fila", None),
+    }
+    if decisao not in mapa:
+        raise HTTPException(400, "Decisão inválida.")
+
+    status, nota = mapa[decisao]
+    if decisao == "pular":
+        # 'pular' manda para o fim: zera o valor de ordenação sem perder o dado
+        storage.adiar_item(item_id)
+    else:
+        storage.atualizar_dados_catalogo(
+            item_id, status=status, erro=nota,
+            decidido_em=__import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc).isoformat())
+
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
 
 
 @app.get("/lotes/{lote_id}/exportar.csv")

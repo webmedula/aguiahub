@@ -71,7 +71,7 @@
     <tr><th>#</th><th>Arquivo</th><th>Linhas</th><th>Status</th><th>Data</th></tr>
     {% for l in lotes %}
     <tr>
-      <td><a href="/lotes/{{ l['id'] }}/conferencia">{{ l['id'] }}</a></td>
+      <td><a href="{% if l['status'] == 'fila' %}/fila/{{ l['id'] }}{% else %}/lotes/{{ l['id'] }}/conferencia{% endif %}">{{ l['id'] }}</a></td>
       <td>{{ l['arquivo'] }}</td>
       <td class="num">{{ l['total_linhas'] }}</td>
       <td>{{ l['status'] }}</td>

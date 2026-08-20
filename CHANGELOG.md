@@ -5,6 +5,49 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.7.0 — 20/08/2026
+
+**Triagem instantânea e fila de trabalho por valor.**
+
+Mudança de estratégia. Os testes mostraram que o casamento automático com o
+catálogo rende perto de zero — o Mercado Livre migrou os produtos ativos para
+o formato MLBU, que a busca da API não alcança, e bloqueou a busca pública de
+anúncios. Quem encontra a peça é a pessoa, no navegador. O sistema passa a ser
+o assistente dessa pessoa, não o motor.
+
+**Triagem** (`/planilha/triagem`) — classifica a planilha inteira **sem
+consultar o Mercado Livre**. Consultar o ML para 1.687 itens gastaria milhares
+de requisições só para descobrir que a maioria nem tem código utilizável.
+
+Resultado na planilha real: **1.334 itens (79%) com código utilizável,
+R$ 1.567.815 em estoque**. Na aba `Acima de R$1000,00`: 126 itens, R$ 1.035.011.
+
+Classificação do código: *part number forte* (letras + números), *numérico
+plausível* (6 a 12 dígitos), *codificado*, *numérico longo*, *curto demais*,
+*duvidoso*, *sem código*.
+
+**Fila de trabalho** (`/fila/{lote}`) — uma peça por tela, **sempre a de maior
+valor parado ainda pendente**. Com 21 horas de trabalho humano para percorrer
+tudo e 72% do valor concentrado em 197 itens, a ordem é a decisão de negócio
+mais importante do sistema.
+
+A tela foi desenhada para quem conhece a peça, não o sistema: descrição e
+código em letra grande, valor parado visível, botão que abre a busca do ML já
+preenchida, campo para colar o link, e três saídas — *é esta peça*, *não achei*,
+*não tenho certeza, deixar para o João*.
+
+O terceiro botão é o mais importante: sem ele, quem está em dúvida chuta — e
+chute foi o que gerou o livro no lugar do injetor na v0.5.1.
+
+A consulta ao catálogo passou a ser **sob demanda**, só para o item que está na
+tela. Se falhar, a tela continua útil.
+
+**Senha da aplicação** — implementei o `APP_PASSWORD` que estava declarado na
+configuração desde a v0.1.0 e nunca havia sido escrito. Fica **desligado por
+padrão**, conforme escolha do cliente; basta definir a variável no EasyPanel
+para ativar. Vale lembrar que a URL é pública e a aplicação publica anúncios
+reais na conta da Águia Parts.
+
 ## v0.6.1 — 20/08/2026
 
 **Reconhecimento das páginas `/up/` e do parâmetro `wid`.**

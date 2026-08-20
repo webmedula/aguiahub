@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
 from app import storage
@@ -296,6 +297,7 @@ async def vincular_por_link(item_id: int, referencia: str) -> dict:
     storage.atualizar_dados_catalogo(
         item_id,
         status=AGUARDANDO,
+        decidido_em=datetime.now(timezone.utc).isoformat(),
         confianca="alta",
         catalog_product_id=cand.catalog_product_id,
         catalog_nome=cand.nome,

@@ -73,6 +73,10 @@ _MIGRACOES = {
         "catalog_category_id": "TEXT",
         "catalog_atributos":  "TEXT",
         "aprovado":           "INTEGER NOT NULL DEFAULT 0",
+        "valor":              "REAL NOT NULL DEFAULT 0",
+        "qualidade_codigo":   "TEXT",
+        "aplicacao":          "TEXT",
+        "decidido_em":        "TEXT",
     },
 }
 
@@ -211,7 +215,7 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
     permitidos = {"descricao_erp", "marca", "quantidade", "preco", "confianca",
                   "catalog_product_id", "catalog_nome", "catalog_foto",
                   "catalog_permalink", "catalog_atributos", "catalog_category_id",
-                  "status", "erro"}
+                  "status", "erro", "valor", "qualidade_codigo", "aplicacao"}
     for chave, valor in extras.items():
         if chave in permitidos and valor is not None:
             campos[chave] = (json.dumps(valor, ensure_ascii=False)
@@ -227,11 +231,40 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
         return int(cur.lastrowid)
 
 
+def adiar_item(item_id: int) -> None:
+    """Manda o item para o fim da fila sem perder o valor original."""
+    with conexao() as conn:
+        conn.execute(
+            "UPDATE itens SET valor = -ABS(valor), atualizado_em = ? WHERE id = ?",
+            (datetime.now(timezone.utc).isoformat(), item_id))
+
+
+def proximo_da_fila(lote_id: int, status: str = "na_fila") -> sqlite3.Row | None:
+    """Devolve o próximo item a trabalhar: o de MAIOR VALOR ainda pendente."""
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM itens
+               WHERE lote_id = ? AND status = ?
+               ORDER BY valor DESC, linha ASC LIMIT 1""",
+            (lote_id, status),
+        ).fetchone()
+
+
+def progresso_da_fila(lote_id: int) -> dict:
+    with conexao() as conn:
+        linhas = conn.execute(
+            """SELECT status, COUNT(*) n, COALESCE(SUM(valor),0) v
+               FROM itens WHERE lote_id = ? GROUP BY status""",
+            (lote_id,),
+        ).fetchall()
+    return {r["status"]: {"itens": r["n"], "valor": r["v"]} for r in linhas}
+
+
 def atualizar_dados_catalogo(item_id: int, **campos) -> None:
     """Atualiza as colunas de catálogo de um item (usado no vínculo manual)."""
     permitidos = {"status", "confianca", "catalog_product_id", "catalog_nome",
                   "catalog_foto", "catalog_permalink", "catalog_category_id",
-                  "catalog_atributos", "erro", "preco"}
+                  "catalog_atributos", "erro", "preco", "decidido_em"}
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
         return

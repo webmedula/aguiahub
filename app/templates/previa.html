@@ -38,6 +38,22 @@
     </div>
     <p style="margin-top:14px"><button type="submit">Analisar catálogo</button></p>
   </form>
+
+  <hr style="border:0;border-top:1px solid var(--linha);margin:20px 0">
+  <h2 style="font-size:15px">Ou monte a fila de trabalho</h2>
+  <p class="fraco" style="font-size:13px;margin-top:-6px">
+    Classifica a planilha inteira na hora, sem consultar o Mercado Livre, e
+    ordena por valor parado — a peça mais cara primeiro. É por aqui que a
+    pessoa do estoque trabalha.
+  </p>
+  <form method="post" action="/planilha/triagem">
+    <input type="hidden" name="arquivo_salvo" value="{{ arquivo }}">
+    <input type="hidden" name="regra_preco" value="{{ regra_preco }}">
+    <input type="hidden" name="percentual" value="{{ percentual }}">
+    <input type="text" name="abas" placeholder="Abas (vazio = todas)"
+           style="width:100%;max-width:420px">
+    <p style="margin-top:12px"><button type="submit">Montar fila de trabalho</button></p>
+  </form>
 </div>
 
 <div class="card">
