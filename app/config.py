@@ -19,6 +19,21 @@ class Settings:
     # PKCE está desligado no DevCenter; ligue aqui se ativar lá
     ml_use_pkce: bool = os.getenv("ML_USE_PKCE", "false").lower() == "true"
 
+    # Categorias-raiz aceitas. MLB5672 = "Acessórios para Veículos".
+    # É o que impede casar um injetor diesel com um livro ou uma esteira.
+    # Vazio desliga a checagem (não recomendado).
+    ml_categorias_raiz: str = os.getenv("ML_CATEGORIAS_RAIZ", "MLB5672")
+
+    # Confiança mínima para um item chegar à tela de aprovação.
+    # 'alta'  = só casamento por part number (recomendado)
+    # 'media' = aceita também casamento parcial
+    confianca_minima: str = os.getenv("CONFIANCA_MINIMA", "alta")
+
+    @property
+    def categorias_raiz(self) -> set[str]:
+        return {c.strip().upper() for c in self.ml_categorias_raiz.split(",")
+                if c.strip()}
+
     # --- Aplicação ---
     secret_key: str = os.getenv("SECRET_KEY", "troque-isto-em-producao")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/aguiahub.db")

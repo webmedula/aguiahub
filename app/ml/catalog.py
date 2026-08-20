@@ -283,12 +283,55 @@ async def enriquecer_candidato(client: MLClient,
     return cand
 
 
+_ORDEM_CONFIANCA = {"alta": 3, "media": 2, "baixa": 1}
+
+
+async def categoria_e_de_autopecas(client: MLClient, category_id: str) -> tuple[bool, str]:
+    """Confere se a categoria pertence à árvore de acessórios para veículos.
+
+    Esta é a trava contra o pior tipo de erro que o sistema já cometeu: casar
+    'CORPO DISTRIBUIDOR' (Bosch, R$ 10.011) com o livro "Corpo a Corpo" de Alex
+    Varenne, ou 'REPARO UNIDADE HEUI' com um kit de alfinetes de costura.
+
+    Sem raízes configuradas, a checagem é desligada e tudo passa.
+    """
+    s = get_settings()
+    raizes = s.categorias_raiz
+    if not raizes or not category_id:
+        return True, ""
+
+    try:
+        cat = await client.get(f"/categories/{category_id}")
+    except MLApiError:
+        return True, ""        # na dúvida não bloqueia; o operador ainda confere
+
+    caminho = cat.get("path_from_root") or []
+    if not caminho:
+        return True, ""
+
+    raiz = (caminho[0].get("id") or "").upper()
+    if raiz in raizes:
+        return True, ""
+
+    nomes = " > ".join(c.get("name", "") for c in caminho[:3])
+    return False, (f"categoria do ML é '{nomes}', fora de acessórios para "
+                   f"veículos — provável casamento errado")
+
+
 def publicavel(cand: CandidatoCatalogo) -> tuple[bool, str]:
-    """Diz se dá para publicar contra este produto de catálogo, e por que não."""
+    """Checagens que não dependem de chamada à API."""
+    s = get_settings()
+
     if (cand.status or "").lower() != "active":
         return False, f"produto de catálogo está '{cand.status or 'sem status'}' no ML"
     if not cand.category_id:
         return False, "categoria do Mercado Livre não identificada"
+
+    minimo = _ORDEM_CONFIANCA.get(s.confianca_minima, 3)
+    if _ORDEM_CONFIANCA.get(cand.confianca, 0) < minimo:
+        return False, (f"confiança '{cand.confianca}' abaixo do mínimo "
+                       f"'{s.confianca_minima}' — casou só pela descrição, "
+                       f"sem bater o part number")
     return True, ""
 
 
@@ -350,8 +393,19 @@ async def escolher_publicavel(
     motivos: list[str] = []
     for cand in candidatos[:maximo]:
         enriquecido = await enriquecer_candidato(client, cand)
+
         ok, motivo = publicavel(enriquecido)
-        if ok:
-            return enriquecido, motivos
-        motivos.append(f"{enriquecido.catalog_product_id}: {motivo}")
+        if not ok:
+            motivos.append(f"{enriquecido.catalog_product_id}: {motivo}")
+            continue
+
+        # A checagem de categoria custa uma chamada, então só roda depois que
+        # o candidato passou pelo resto.
+        compativel, motivo_cat = await categoria_e_de_autopecas(
+            client, enriquecido.category_id)
+        if not compativel:
+            motivos.append(f"{enriquecido.catalog_product_id}: {motivo_cat}")
+            continue
+
+        return enriquecido, motivos
     return None, motivos

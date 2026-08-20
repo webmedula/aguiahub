@@ -24,9 +24,9 @@ from app import storage
 from app.config import get_settings
 from app.abreviacoes import expandir
 from app.ml.catalog import (CandidatoCatalogo, anuncios_ativos,
-                            buscar_no_catalogo, enriquecer_candidato,
-                            escolher_publicavel, produto_do_anuncio,
-                            publicavel)
+                            buscar_no_catalogo, categoria_e_de_autopecas,
+                            enriquecer_candidato, escolher_publicavel,
+                            produto_do_anuncio, publicavel)
 from app.ml.client import MLClient, MLApiError
 from app.sheets import LinhaProduto, calcular_preco, montar_descricao, montar_titulo
 
@@ -40,6 +40,7 @@ AGUARDANDO = "aguardando_aprovacao"   # casou com o catálogo, esperando o opera
 SEM_CATALOGO = "sem_catalogo"         # não achou match -> precisa de foto própria
 CATALOGO_INATIVO = "catalogo_inativo"  # achou, mas o produto não está ativo no ML
 SEM_CATEGORIA = "sem_categoria"       # produto ativo, mas não achei a categoria
+DUVIDOSO = "sugestao_duvidosa"        # achou algo, mas não é confiável
 IGNORADO = "ignorado"                 # dado ruim, preço inválido ou já publicado
 ERRO = "erro"
 PUBLICADO = "publicado"
@@ -204,9 +205,15 @@ async def analisar_lote(
                 # Separar os dois motivos importa: 'inativo' é limitação do
                 # catálogo do ML (só o vínculo manual resolve), 'sem categoria'
                 # é falha nossa de detecção e tem conserto no código.
-                so_categoria = (recusas and
-                                all("ategoria" in m for m in recusas))
-                res.status = SEM_CATEGORIA if so_categoria else CATALOGO_INATIVO
+                juntos = " ".join(recusas)
+                if "fora de acessórios" in juntos or "confiança" in juntos:
+                    # Achou produto, mas era casamento ruim (livro, esteira,
+                    # alfinete). Melhor não oferecer para aprovação.
+                    res.status = DUVIDOSO
+                elif recusas and all("ategoria" in m for m in recusas):
+                    res.status = SEM_CATEGORIA
+                else:
+                    res.status = CATALOGO_INATIVO
                 res.mensagem = ("nenhum produto de catálogo utilizável ("
                                 + "; ".join(recusas) + "). "
                                 + await _pista_de_mercado(client, p))
@@ -229,7 +236,8 @@ async def analisar_lote(
             status=r.status,
             erro=r.mensagem if r.status in (ERRO, IGNORADO, SEM_CATALOGO,
                                             CATALOGO_INATIVO,
-                                            SEM_CATEGORIA) else None,
+                                            SEM_CATEGORIA,
+                                            DUVIDOSO) else None,
             descricao_erp=r.descricao_erp,
             marca=r.marca,
             quantidade=r.quantidade,
@@ -278,6 +286,12 @@ async def vincular_por_link(item_id: int, referencia: str) -> dict:
     ok, motivo = publicavel(cand)
     if not ok:
         return {"ok": False, "mensagem": f"Não dá para publicar: {motivo}."}
+
+    compativel, motivo_cat = await categoria_e_de_autopecas(client, cand.category_id)
+    if not compativel:
+        return {"ok": False, "mensagem": (
+            f"O link aponta para um produto fora de autopeças — {motivo_cat}. "
+            "Confira se copiou o anúncio certo.")}
 
     storage.atualizar_dados_catalogo(
         item_id,

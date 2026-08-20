@@ -165,7 +165,7 @@
       <td><span class="pill alerta">{{ i['status'] }}</span></td>
       <td class="fraco">
         {{ i['erro'] or '' }}
-        {% if i['status'] in ('sem_catalogo', 'catalogo_inativo', 'sem_categoria') %}
+        {% if i['status'] in ('sem_catalogo', 'catalogo_inativo', 'sem_categoria', 'sugestao_duvidosa') %}
         <form method="post" action="/itens/{{ i['id'] }}/vincular"
               style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
           <input type="hidden" name="lote_id" value="{{ lote['id'] }}">

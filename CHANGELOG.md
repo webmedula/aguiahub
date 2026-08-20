@@ -5,6 +5,45 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.6.0 — 20/08/2026
+
+**Travas contra casamento errado. Correção de um problema introduzido na v0.4.0.**
+
+No lote #1, os 4 itens marcados como "prontos para aprovar" estavam **todos
+errados**, numa conta de produção:
+
+| Peça no ERP | O que o sistema casou |
+|---|---|
+| Corpo Distribuidor Bosch — R$ 10.011 | livro "Corpo a Corpo", de Alex Varenne |
+| Válvula Dosadora MBB — R$ 9.063 | cuba de banheiro marca Japi |
+| Reparo Unidade HEUI — R$ 569 | kit de alfinetes de costura |
+| Módulo Eletrônico Bosch — R$ 9.745 | painel de esteira ergométrica |
+
+Causa: a busca **só por descrição**, acrescentada na v0.4.0 para "melhorar a
+cobertura", converteu "não encontrei" em "encontrei com confiança e está errado".
+Todos vieram marcados como confiança baixa, mas mesmo assim chegaram à tela de
+aprovação — bastava marcar "todos" para publicar um injetor diesel como livro.
+
+Três travas:
+
+- **Confiança mínima.** Só casamento por **part number** chega à aprovação.
+  Casamento por descrição vira sugestão, não candidato. Configurável em
+  `CONFIANCA_MINIMA` (padrão `alta`).
+- **Categoria compatível.** O candidato precisa estar na árvore de *Acessórios
+  para Veículos* (`MLB5672`). Livro, banheiro, costura e fitness são barrados
+  automaticamente, com o caminho da categoria na mensagem. Configurável em
+  `ML_CATEGORIAS_RAIZ`.
+- **O vínculo manual também passa pelas travas.** Link colado para produto fora
+  de autopeças é recusado com explicação — protege contra copiar o link errado.
+
+- Novo status `sugestao_duvidosa`, para o que foi encontrado mas reprovado nas
+  travas. Continua visível e aceita vínculo manual, mas não é oferecido para
+  aprovação.
+- Sete testes novos, escritos a partir dos quatro casos reais.
+
+Consequência esperada: **a contagem de "prontos para aprovar" vai cair**, e isso
+é o comportamento correto. Quatro casamentos errados valem menos que zero.
+
 ## v0.5.1 — 20/08/2026
 
 **Separação de motivos e exportação do lote.**
