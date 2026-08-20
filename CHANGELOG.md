@@ -5,6 +5,35 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.5.0 — 19/08/2026
+
+**Vínculo manual pelo link do anúncio, e correção de erro mascarado.**
+
+Diagnóstico do item `5273337`: a mensagem dizia *"não encontrei anúncios ativos
+com esse termo"*, mas o anúncio existe no ML. A causa: **o Mercado Livre bloqueou
+o endpoint `/sites/MLB/search` para aplicações (HTTP 403)**. O código capturava o
+erro e devolvia lista vazia — fazendo "bloqueado" parecer "não encontrado".
+
+- **Correção:** falha na busca de anúncios agora é reportada como falha, com o
+  código HTTP. Erro mascarado como resultado vazio é pior do que erro visível,
+  porque manda o diagnóstico para o lado errado.
+- **Vínculo manual:** na tela de conferência, itens sem catálogo utilizável
+  ganham um campo para colar o link do anúncio do ML. O sistema extrai o ID,
+  consulta `/items/{id}` ou `/products/{id}` e lê o `catalog_product_id` e a
+  `category_id` **direto da fonte** — sem adivinhação. O item passa a
+  `aguardando_aprovacao` com confiança alta.
+- Aceita as formas que dá para copiar do navegador: link de anúncio
+  (`/MLB-123...-nome-_JM`), link de produto de catálogo (`/p/MLB123`), link com
+  parâmetros de rastreio, ou o código solto.
+- Se o anúncio colado não estiver vinculado ao catálogo, o sistema avisa que o
+  item vai precisar de foto própria, em vez de falhar na publicação.
+- Oito testes cobrindo a extração do ID, inclusive o caso de `MLB1747`
+  (categoria) não ser confundido com anúncio.
+
+Contexto: o bloqueio da busca pública é decisão do Mercado Livre, não limitação
+do Águiahub. Vários desenvolvedores relatam o mesmo 403. O vínculo manual é a
+forma de contornar sem depender desse endpoint.
+
 ## v0.4.0 — 19/08/2026
 
 **Expansão das abreviações do ERP e pista de mercado.**

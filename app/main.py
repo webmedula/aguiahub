@@ -15,7 +15,8 @@ from app.config import get_settings
 from app.version import VERSAO, LANCADA_EM
 from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
-from app.publisher import analisar_lote, publicar_aprovados, resumir
+from app.publisher import (analisar_lote, publicar_aprovados, resumir,
+                           vincular_por_link)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
 
@@ -219,6 +220,28 @@ async def conferencia(request: Request, lote_id: int):
         "outros": [i for i in itens if i["status"] != "aguardando_aprovacao"],
         "resumo": resumo,
     })
+
+
+@app.post("/itens/{item_id}/vincular")
+async def vincular(item_id: int, referencia: str = Form(...),
+                   lote_id: int = Form(...)):
+    """Vincula manualmente um item a um produto de catálogo, pelo link do ML.
+
+    Existe porque o ML bloqueou a busca pública de anúncios: o operador acha a
+    peça no navegador, cola o link, e nós lemos o catalog_product_id da fonte.
+    """
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    try:
+        resultado = await vincular_por_link(item_id, referencia)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except MLApiError as exc:
+        raise HTTPException(400, f"Mercado Livre: {exc.mensagem_amigavel()}")
+
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/lotes/{lote_id}/conferencia", status_code=303)
 
 
 @app.post("/lotes/{lote_id}/publicar", response_class=HTMLResponse)

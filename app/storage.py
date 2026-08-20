@@ -227,6 +227,27 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
         return int(cur.lastrowid)
 
 
+def atualizar_dados_catalogo(item_id: int, **campos) -> None:
+    """Atualiza as colunas de catálogo de um item (usado no vínculo manual)."""
+    permitidos = {"status", "confianca", "catalog_product_id", "catalog_nome",
+                  "catalog_foto", "catalog_permalink", "catalog_category_id",
+                  "catalog_atributos", "erro", "preco"}
+    campos = {k: v for k, v in campos.items() if k in permitidos}
+    if not campos:
+        return
+    campos["atualizado_em"] = datetime.now(timezone.utc).isoformat()
+    sets = ", ".join(f"{k} = ?" for k in campos)
+    with conexao() as conn:
+        conn.execute(f"UPDATE itens SET {sets} WHERE id = ?",
+                     (*campos.values(), item_id))
+
+
+def item(item_id: int) -> sqlite3.Row | None:
+    with conexao() as conn:
+        return conn.execute("SELECT * FROM itens WHERE id = ?",
+                            (item_id,)).fetchone()
+
+
 def definir_aprovacao(lote_id: int, ids_aprovados: list[int]) -> int:
     """Marca como aprovados apenas os IDs informados. O resto fica reprovado."""
     with conexao() as conn:

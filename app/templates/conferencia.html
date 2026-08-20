@@ -146,15 +146,35 @@
 {% if outros %}
 <div class="card">
   <h2>Não entram nesta publicação <span class="fraco">({{ outros | length }})</span></h2>
+  <div class="aviso">
+    O Mercado Livre bloqueou a busca automática de anúncios para aplicações, então
+    alguns itens que existem no ML não são encontrados sozinhos. <strong>Se você
+    achar a peça no ML pelo navegador, cole o link abaixo</strong> — o sistema lê
+    o produto de catálogo direto do anúncio e libera o item para aprovação.
+  </div>
   <table>
-    <tr><th>Ln</th><th>Código</th><th>Descrição</th><th>Status</th><th>Motivo</th></tr>
+    <tr><th>Ln</th><th>Código</th><th>Descrição</th><th>Status</th>
+        <th>Motivo / vincular manualmente</th></tr>
     {% for i in outros %}
     <tr>
       <td class="fraco num">{{ i['linha'] }}</td>
       <td>{{ i['sku'] }}</td>
       <td class="fraco">{{ i['descricao_erp'] }}</td>
       <td><span class="pill alerta">{{ i['status'] }}</span></td>
-      <td class="fraco">{{ i['erro'] or '' }}</td>
+      <td class="fraco">
+        {{ i['erro'] or '' }}
+        {% if i['status'] in ('sem_catalogo', 'catalogo_inativo') %}
+        <form method="post" action="/itens/{{ i['id'] }}/vincular"
+              style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+          <input type="text" name="referencia" required
+                 placeholder="cole o link do anúncio no Mercado Livre"
+                 style="flex:1;min-width:240px;font-size:12px">
+          <button class="secundario" type="submit"
+                  style="font-size:12px;padding:6px 12px">Vincular</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table>

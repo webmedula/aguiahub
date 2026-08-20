@@ -24,7 +24,9 @@ from app import storage
 from app.config import get_settings
 from app.abreviacoes import expandir
 from app.ml.catalog import (CandidatoCatalogo, anuncios_ativos,
-                            buscar_no_catalogo, escolher_publicavel)
+                            buscar_no_catalogo, enriquecer_candidato,
+                            escolher_publicavel, produto_do_anuncio,
+                            publicavel)
 from app.ml.client import MLClient, MLApiError
 from app.sheets import LinhaProduto, calcular_preco, montar_descricao, montar_titulo
 
@@ -116,8 +118,15 @@ async def _pista_de_mercado(client: MLClient, p: LinhaProduto) -> str:
     if not dados["total"]:
         dados = await anuncios_ativos(client, expandir(p.descricao))
 
+    if dados.get("erro"):
+        return (f"Não deu para consultar anúncios: {dados['erro']}. "
+                "Se você achar a peça no ML pelo navegador, cole o link aqui "
+                "para vincular manualmente.")
+
     if not dados["total"]:
-        return "Também não encontrei anúncios ativos com esse termo."
+        return ("Também não encontrei anúncios ativos com esse termo. "
+                "Se você achar a peça no ML pelo navegador, cole o link aqui "
+                "para vincular manualmente.")
 
     precos = [x for x in dados["precos"] if x]
     faixa = ""
@@ -228,6 +237,54 @@ async def analisar_lote(
         )
 
     return resultados
+
+
+# ---------------------------------------------------------------------------
+# Vínculo manual, quando a busca automática não acha
+# ---------------------------------------------------------------------------
+
+async def vincular_por_link(item_id: int, referencia: str) -> dict:
+    """Vincula um item do lote a um produto de catálogo achado manualmente.
+
+    Necessário porque o ML bloqueou a busca pública de anúncios: o operador
+    consegue achar a peça no navegador, mas a aplicação não. Colando o link,
+    pegamos `catalog_product_id` e `category_id` direto da fonte — sem chute.
+    """
+    client = MLClient()
+    dados = await produto_do_anuncio(client, referencia)
+
+    if not dados["catalog_product_id"]:
+        return {"ok": False, "mensagem": (
+            f"O anúncio '{dados['titulo'][:60]}' não está vinculado ao catálogo "
+            "do Mercado Livre, então não dá para herdar foto e ficha dele. "
+            "Este item precisa de foto própria.")}
+
+    cand = CandidatoCatalogo(
+        catalog_product_id=dados["catalog_product_id"],
+        nome=dados["titulo"], domain_id=None, status=dados.get("status"),
+        confianca="alta", motivo="vinculado manualmente pelo operador",
+        foto_url=dados.get("foto", ""), permalink=dados.get("permalink", ""),
+        category_id=dados.get("category_id", ""),
+    )
+    cand = await enriquecer_candidato(client, cand)
+
+    ok, motivo = publicavel(cand)
+    if not ok:
+        return {"ok": False, "mensagem": f"Não dá para publicar: {motivo}."}
+
+    storage.atualizar_dados_catalogo(
+        item_id,
+        status=AGUARDANDO,
+        confianca="alta",
+        catalog_product_id=cand.catalog_product_id,
+        catalog_nome=cand.nome,
+        catalog_foto=cand.foto_url,
+        catalog_permalink=cand.permalink,
+        catalog_category_id=cand.category_id,
+        erro=None,
+    )
+    return {"ok": True, "mensagem": f"Vinculado a {cand.nome[:70]}.",
+            "produto": cand.catalog_product_id}
 
 
 # ---------------------------------------------------------------------------

@@ -133,6 +133,63 @@ async def detalhe_produto(client: MLClient, catalog_product_id: str) -> dict:
     return await client.get(f"/products/{catalog_product_id}")
 
 
+_RE_ANUNCIO = re.compile(r"(ML[ABCMU])-?(\d{6,})", re.IGNORECASE)
+
+
+def extrair_id_anuncio(texto: str) -> str:
+    """Tira o ID do anúncio de uma URL do Mercado Livre ou de um texto solto.
+
+    Aceita as formas que o operador consegue copiar do navegador:
+        https://produto.mercadolivre.com.br/MLB-1234567890-bomba-arla-_JM
+        https://www.mercadolivre.com.br/p/MLB12345678
+        MLB1234567890
+    """
+    achado = _RE_ANUNCIO.search(texto or "")
+    return f"{achado.group(1).upper()}{achado.group(2)}" if achado else ""
+
+
+async def produto_do_anuncio(client: MLClient, referencia: str) -> dict:
+    """Dado o link (ou ID) de um anúncio do ML, descobre o produto de catálogo.
+
+    Este é o caminho manual para quando a busca automática não acha a peça — e
+    hoje ele é essencial, porque o ML bloqueou a busca pública de anúncios.
+    O operador acha o anúncio no navegador, cola o link, e nós extraímos daqui o
+    `catalog_product_id` e a `category_id` corretos, direto da fonte.
+    """
+    ident = extrair_id_anuncio(referencia)
+    if not ident:
+        raise ValueError(
+            "Não consegui identificar o anúncio. Cole o link completo do "
+            "Mercado Livre ou o código no formato MLB1234567890."
+        )
+
+    # /p/MLB123 é produto de catálogo; /MLB-123 é anúncio. Tentamos os dois.
+    if "/p/" in (referencia or ""):
+        produto = await client.get(f"/products/{ident}")
+        return {
+            "tipo": "produto_de_catalogo",
+            "catalog_product_id": ident,
+            "category_id": produto.get("category_id") or "",
+            "titulo": produto.get("name") or "",
+            "status": produto.get("status") or "",
+            "foto": _extrair_foto(produto),
+            "permalink": produto.get("permalink") or "",
+        }
+
+    anuncio = await client.get(f"/items/{ident}")
+    return {
+        "tipo": "anuncio",
+        "catalog_product_id": anuncio.get("catalog_product_id") or "",
+        "category_id": anuncio.get("category_id") or "",
+        "titulo": anuncio.get("title") or "",
+        "status": anuncio.get("status") or "",
+        "foto": (anuncio.get("thumbnail")
+                 or ((anuncio.get("pictures") or [{}])[0].get("url", ""))),
+        "permalink": anuncio.get("permalink") or "",
+        "preco": anuncio.get("price"),
+    }
+
+
 def _extrair_foto(produto: dict) -> str:
     """Pega a URL da primeira imagem do produto de catálogo.
 
@@ -244,13 +301,23 @@ async def anuncios_ativos(client: MLClient, termo: str) -> dict:
     preço praticada.
     """
     s = get_settings()
-    vazio = {"total": 0, "category_id": "", "exemplos": [], "precos": []}
+    vazio = {"total": 0, "category_id": "", "exemplos": [], "precos": [],
+             "erro": ""}
     if not termo.strip():
         return vazio
     try:
         resp = await client.get(f"/sites/{s.ml_site_id}/search",
                                 params={"q": termo[:120], "limit": 5})
-    except MLApiError:
+    except MLApiError as exc:
+        # O ML bloqueou a busca pública de anúncios (403) para aplicações.
+        # Devolver lista vazia aqui faria "bloqueado" parecer "não encontrado",
+        # que foi exatamente o que confundiu o diagnóstico do item 5273337.
+        vazio["erro"] = (
+            "a busca pública de anúncios do ML está bloqueada para aplicações "
+            f"(HTTP {exc.status}) — não dá para verificar automaticamente"
+            if exc.status in (401, 403)
+            else f"falha na busca de anúncios: {exc.mensagem_amigavel()}"
+        )
         return vazio
 
     resultados = resp.get("results") or []
