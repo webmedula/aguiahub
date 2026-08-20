@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
 
@@ -405,6 +406,50 @@ def resumir(resultados: list) -> dict:
 # ---------------------------------------------------------------------------
 
 DA_LOJA = "pronto_com_fotos"      # tem foto própria: pode virar anúncio direto
+
+
+async def vincular_qualquer(item_id: int, referencia: str) -> dict:
+    """Aceita QUALQUER referência e decide sozinha o que fazer com ela.
+
+    Existia um campo para link da loja e outro para link do Mercado Livre, e o
+    operador colava no errado — erro previsível, culpa do desenho. Agora é um
+    campo só:
+
+      - link da loja da Águia  -> puxa foto, descrição e preço de lá
+      - link do Mercado Livre  -> vincula ao produto de catálogo
+      - código solto           -> procura primeiro na loja, depois no ML
+    """
+    from app import loja
+    from urllib.parse import urlparse
+
+    referencia = (referencia or "").strip()
+    if not referencia:
+        return {"ok": False, "mensagem": "Cole um link ou um código."}
+
+    host_loja = urlparse(get_settings().loja_base_url).netloc.lower()
+    host_dado = urlparse(referencia).netloc.lower() if "//" in referencia else ""
+
+    # 1. é da loja da Águia?
+    if host_dado and host_loja and host_loja in host_dado:
+        return await vincular_produto_da_loja(item_id, referencia)
+
+    # 2. é do Mercado Livre?
+    if "mercadoliv" in referencia.lower() or re.search(r"ML[ABCMU]U?\d{6,}",
+                                                       referencia, re.I):
+        return await vincular_por_link(item_id, referencia)
+
+    # 3. código solto: loja primeiro (tem foto), ML depois
+    try:
+        achados = await loja.buscar_por_codigo(referencia)
+        if achados:
+            return await vincular_produto_da_loja(item_id, achados[0].url)
+    except loja.LojaError as exc:
+        log.warning("Busca na loja falhou para %r: %s", referencia, exc)
+
+    return {"ok": False, "mensagem": (
+        f"Não achei '{referencia}' na loja da Águia, e isso não parece um link "
+        "do Mercado Livre. Cole o endereço completo da página do produto — "
+        "da loja da Águia ou do Mercado Livre.")}
 
 
 async def vincular_produto_da_loja(item_id: int, referencia: str) -> dict:

@@ -4,5 +4,5 @@ Aparece no cabeçalho da interface e em GET /health — assim dá para confirmar
 sem adivinhação, qual versão está de fato rodando no VPS depois de um deploy.
 """
 
-VERSAO = "0.8.0"
+VERSAO = "0.8.1"
 LANCADA_EM = "2026-08-20"

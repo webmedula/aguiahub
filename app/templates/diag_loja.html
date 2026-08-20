@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block titulo %}Testar loja{% endblock %}
+{% block conteudo %}
+<div class="card" style="padding:26px">
+  <h2>Testar conexão com a loja da Águia</h2>
+  <p class="fraco" style="font-size:14px">
+    Cole o link de um produto da loja (ou só o código) e veja exatamente o que o
+    servidor respondeu. Serve para descobrir por que um vínculo falhou.
+  </p>
+  <form method="get" action="/diagnostico/loja"
+        style="display:flex;gap:10px;flex-wrap:wrap">
+    <input type="text" name="referencia" value="{{ referencia or '' }}" required
+           placeholder="https://loja.aguiadiesel.com.br/produto/... ou 0445025016"
+           style="flex:1;min-width:320px;font-size:15px;padding:11px">
+    <button type="submit" style="font-size:15px;padding:11px 18px">Testar</button>
+  </form>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Loja configurada: <code>{{ base }}</code>
+  </p>
+</div>
+
+{% if diag %}
+<div class="card" style="padding:26px">
+  <h2 style="font-size:15px">O que aconteceu</h2>
+  <table style="font-size:13px">
+    <tr><th style="width:150px">URL chamada</th>
+        <td style="word-break:break-all">{{ diag.url }}</td></tr>
+    <tr><th>Parâmetros</th><td>{{ diag.params }}</td></tr>
+    {% if diag.status %}
+    <tr><th>Status HTTP</th>
+        <td><strong style="color:{{ '#5fd39b' if diag.status < 400 else '#e88a84' }}">
+        {{ diag.status }}</strong></td></tr>
+    <tr><th>Tipo de conteúdo</th><td>{{ diag.content_type }}</td></tr>
+    <tr><th>Produtos achados</th><td>{{ diag.quantidade if diag.quantidade is defined else '—' }}</td></tr>
+    {% endif %}
+    {% if diag.erro %}
+    <tr><th>Erro</th><td style="color:#e88a84">{{ diag.erro }}</td></tr>
+    {% endif %}
+  </table>
+  {% if diag.inicio_da_resposta %}
+  <p class="fraco" style="font-size:12px;margin-top:14px">Início da resposta:</p>
+  <pre style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
+              padding:12px;font-size:12px;overflow-x:auto;white-space:pre-wrap;
+              word-break:break-all">{{ diag.inicio_da_resposta }}</pre>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if produto %}
+<div class="card" style="padding:26px;border-color:rgba(46,163,107,.5)">
+  <h2 style="font-size:15px">✓ Produto lido com sucesso</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+    {% for f in produto.fotos[:5] %}
+    <img src="{{ f }}" style="width:110px;height:110px;object-fit:contain;
+         background:#fff;border-radius:8px;border:1px solid var(--linha)">
+    {% endfor %}
+  </div>
+  <table style="font-size:13px">
+    <tr><th style="width:120px">Nome</th><td>{{ produto.nome }}</td></tr>
+    <tr><th>SKU</th><td>{{ produto.sku }}</td></tr>
+    <tr><th>Preço na loja</th><td>R$ {{ '%.2f'|format(produto.preco) }}</td></tr>
+    <tr><th>Fotos</th><td>{{ produto.fotos|length }}</td></tr>
+    <tr><th>Estoque</th><td>{{ 'em estoque' if produto.em_estoque else 'fora de estoque' }}</td></tr>
+    <tr><th>Descrição</th><td class="fraco">{{ produto.descricao[:300] }}</td></tr>
+  </table>
+</div>
+{% endif %}
+
+{% if mensagem %}
+<div class="card" style="padding:22px;border-color:rgba(208,69,63,.4)">
+  <h2 style="font-size:15px">Não deu certo</h2>
+  <p style="font-size:15px">{{ mensagem }}</p>
+</div>
+{% endif %}
+{% endblock %}

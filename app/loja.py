@@ -119,27 +119,71 @@ def _montar(dados: dict, base: str) -> ProdutoDaLoja:
     )
 
 
+# Muitos sites WordPress ficam atrás de firewall/CDN que recusa requisição sem
+# cara de navegador. O httpx se identifica como "python-httpx" e leva 403.
+_CABECALHOS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/126.0 Safari/537.36 Aguiahub/1.0"),
+    "Accept": "application/json",
+    "Accept-Language": "pt-BR,pt;q=0.9",
+}
+
+
 async def _consultar(params: dict) -> list[dict]:
+    dados, _ = await consultar_bruto(params)
+    return dados
+
+
+async def consultar_bruto(params: dict) -> tuple[list[dict], dict]:
+    """Consulta a loja e devolve (dados, diagnóstico).
+
+    O diagnóstico serve para a tela de teste: quando algo falha no VPS, dá para
+    ver o status HTTP, a URL exata e o começo da resposta — em vez de adivinhar.
+    """
     s = get_settings()
     base = s.loja_base_url.rstrip("/")
     if not base:
         raise LojaError("Endereço da loja não configurado (LOJA_BASE_URL).")
 
     url = f"{base}/wp-json/wc/store/v1/products"
+    diag: dict = {"url": url, "params": params}
+
     try:
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as cli:
+        async with httpx.AsyncClient(timeout=25, follow_redirects=True,
+                                     headers=_CABECALHOS) as cli:
             resp = await cli.get(url, params=params)
     except httpx.RequestError as exc:
-        raise LojaError(f"Não consegui falar com a loja: {exc}") from exc
+        diag["erro"] = f"{type(exc).__name__}: {exc}"
+        raise LojaError(
+            f"Não consegui acessar {url} — {type(exc).__name__}: {exc}. "
+            "Verifique se o VPS alcança o site da loja."
+        ) from exc
+
+    diag["status"] = resp.status_code
+    diag["content_type"] = resp.headers.get("content-type", "")
+    diag["inicio_da_resposta"] = resp.text[:400]
 
     if resp.status_code >= 400:
-        raise LojaError(f"A loja respondeu {resp.status_code} para {url}")
+        raise LojaError(
+            f"A loja respondeu HTTP {resp.status_code} em {url}. "
+            + ("A API de produtos do WooCommerce parece desativada nesse site."
+               if resp.status_code == 404 else
+               "Pode ser firewall do site bloqueando a aplicação."
+               if resp.status_code in (401, 403) else
+               f"Resposta: {resp.text[:200]}")
+        )
+
     try:
         dados = resp.json()
     except ValueError as exc:
-        raise LojaError("A loja não devolveu JSON — verifique o endereço.") from exc
+        raise LojaError(
+            f"{url} não devolveu JSON (veio {diag['content_type']}). "
+            "Confirme que a Store API do WooCommerce está ativa."
+        ) from exc
 
-    return dados if isinstance(dados, list) else [dados]
+    lista = dados if isinstance(dados, list) else [dados]
+    diag["quantidade"] = len(lista)
+    return lista, diag
 
 
 async def buscar_por_url(url: str) -> ProdutoDaLoja | None:

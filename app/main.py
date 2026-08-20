@@ -21,7 +21,7 @@ from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
 from app import loja
 from app.publisher import (analisar_lote, publicar_aprovados, publicar_da_loja,
-                           resumir, vincular_por_link,
+                           resumir, vincular_por_link, vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
@@ -384,6 +384,37 @@ async def fila(request: Request, lote_id: int):
     })
 
 
+@app.get("/diagnostico/loja", response_class=HTMLResponse)
+async def diagnostico_loja(request: Request, referencia: str = ""):
+    """Mostra exatamente o que a loja respondeu — status, tipo e corpo.
+
+    Quando um vínculo falha no VPS, sem isto só sobra adivinhar. Aqui o erro
+    aparece cru: HTTP 403 é firewall, 404 é API desativada, HTML em vez de JSON
+    é página de bloqueio.
+    """
+    contexto = {"request": request, "referencia": referencia,
+                "base": s.loja_base_url, "diag": None,
+                "produto": None, "mensagem": None}
+
+    if referencia.strip():
+        params = ({"slug": loja._slug_da_url(referencia)}
+                  if referencia.strip().startswith("http")
+                  else {"sku": referencia.strip()})
+        try:
+            dados, diag = await loja.consultar_bruto(params)
+            contexto["diag"] = diag
+            if dados:
+                contexto["produto"] = loja._montar(dados[0], s.loja_base_url)
+            else:
+                contexto["mensagem"] = (
+                    "A loja respondeu certo, mas não achou nenhum produto com "
+                    f"esse {'endereço' if 'slug' in params else 'código'}.")
+        except loja.LojaError as exc:
+            contexto["mensagem"] = str(exc)
+
+    return templates.TemplateResponse(request, "diag_loja.html", contexto)
+
+
 @app.post("/itens/{item_id}/vincular-loja")
 async def vincular_loja(item_id: int, referencia: str = Form(...),
                         lote_id: int = Form(...)):
@@ -467,6 +498,23 @@ async def exportar_lote(lote_id: int):
 @app.post("/itens/{item_id}/vincular")
 async def vincular(item_id: int, referencia: str = Form(...),
                    lote_id: int = Form(...)):
+    """Campo único: aceita link da loja, link do ML, ou código solto."""
+    try:
+        resultado = await vincular_qualquer(item_id, referencia)
+    except loja.LojaError as exc:
+        raise HTTPException(400, str(exc))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except MLApiError as exc:
+        raise HTTPException(400, f"Mercado Livre: {exc.mensagem_amigavel()}")
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.post("/itens/{item_id}/vincular-ml")
+async def vincular_ml(item_id: int, referencia: str = Form(...),
+                      lote_id: int = Form(...)):
     """Vincula manualmente um item a um produto de catálogo, pelo link do ML.
 
     Existe porque o ML bloqueou a busca pública de anúncios: o operador acha a

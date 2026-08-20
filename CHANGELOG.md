@@ -5,6 +5,37 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.8.1 — 20/08/2026
+
+**Campo único para o link, e diagnóstico da loja.**
+
+Relato: colar o link da loja devolvia *"Não consegui identificar o anúncio nesse
+endereço"*. O link tinha ido para o campo do Mercado Livre. Dois campos parecidos,
+cada um aceitando um tipo de link — erro previsível, culpa do desenho.
+
+- **Um campo só.** Aceita link da loja da Águia, link do Mercado Livre, ou
+  código solto, e decide sozinho para onde ir. Código solto tenta a loja
+  primeiro, porque é de lá que vêm as fotos.
+- Dois botões de busca lado a lado: *Procurar na loja da Águia* e *Procurar no
+  Mercado Livre*, ambos já preenchidos com o código da peça.
+- **User-Agent de navegador** nas chamadas à loja. Sites WordPress atrás de
+  firewall costumam recusar requisição identificada como `python-httpx`.
+- **Erros da loja passam a dizer o que houve**: status HTTP, URL chamada, e uma
+  interpretação — 404 é API desativada, 403 é firewall, HTML no lugar de JSON é
+  página de bloqueio.
+- **Nova tela `/diagnostico/loja`** (link na tela inicial): cole um link ou
+  código e veja exatamente o que o servidor da loja respondeu, com o começo da
+  resposta crua. Serve para descobrir a causa sem adivinhação.
+
+Verificações feitas contra a loja real:
+
+- `INJETOR COMMON RAIL LAND ROVER DISCOVERY 2.7 – A2C59513553` (linha 11 da
+  planilha, R$ 27.718) está na loja, com foto e 5 em estoque — mas com o campo
+  **SKU vazio**. A busca por SKU falha e a busca livre acha, porque o código está
+  no nome. A cascata SKU → busca livre já cobria esse caso.
+- `BOMBA DE ALTA PRESSÃO CB18 – 0.445.025.016` tem SKU preenchido e é achada
+  pelas duas vias.
+
 ## v0.8.0 — 20/08/2026
 
 **A loja da Águia como origem das fotos. Resolve o problema que travava o projeto.**
