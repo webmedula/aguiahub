@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block conteudo %}
+<div class="card">
+  <h2>Lote #{{ lote['id'] }} — {{ lote['arquivo'] }}</h2>
+  <p class="fraco">
+    {{ lote['total_linhas'] }} linhas ·
+    {% if lote['dry_run'] %}simulação{% else %}publicação real{% endif %} ·
+    status {{ lote['status'] }} ·
+    {{ lote['criado_em'][:16].replace('T',' ') }}
+  </p>
+</div>
+
+<div class="card">
+  <h2>Itens</h2>
+  <table>
+    <tr><th>Ln</th><th>SKU</th><th>Título</th><th>Status</th><th>Anúncio</th><th>Erro</th></tr>
+    {% for i in itens %}
+    <tr>
+      <td class="fraco num">{{ i['linha'] }}</td>
+      <td>{{ i['sku'] }}</td>
+      <td>{{ i['titulo'] }}</td>
+      <td>
+        {% if i['status'] == 'publicado' %}
+          <span class="pill ok">{{ i['status'] }}</span>
+        {% elif i['status'] == 'erro' %}
+          <span class="pill erro">erro</span>
+        {% else %}
+          <span class="pill alerta">{{ i['status'] }}</span>
+        {% endif %}
+      </td>
+      <td>{% if i['permalink'] %}<a href="{{ i['permalink'] }}" target="_blank" rel="noopener">{{ i['ml_item_id'] }}</a>{% endif %}</td>
+      <td class="fraco">{{ i['erro'] or '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+<p><a class="botao secundario" href="/">Voltar</a> <a class="botao" href="/lotes/{{ lote['id'] }}/conferencia">Abrir conferência</a></p>
+{% endblock %}

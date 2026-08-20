@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Águiahub{% endblock %}</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b22; --linha:#262a33;
+    --txt:#e7e9ee; --fraco:#9aa1ae;
+    --azul:#2f6df6; --ok:#2ea36b; --alerta:#c8922a; --erro:#d0453f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{border-bottom:1px solid var(--linha);padding:16px 24px;display:flex;
+         justify-content:space-between;align-items:center;gap:16px}
+  header h1{font-size:17px;margin:0;letter-spacing:.3px}
+  header h1 span{color:var(--fraco);font-weight:400}
+  main{max-width:1180px;margin:0 auto;padding:24px}
+  .card{background:var(--card);border:1px solid var(--linha);border-radius:10px;
+        padding:20px;margin-bottom:18px}
+  .card h2{margin:0 0 14px;font-size:15px;font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--linha);
+        vertical-align:top}
+  th{color:var(--fraco);font-weight:500;font-size:12px;text-transform:uppercase;
+     letter-spacing:.4px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;
+        font-weight:600;letter-spacing:.3px}
+  .pill.ok{background:rgba(46,163,107,.16);color:#5fd39b}
+  .pill.alerta{background:rgba(200,146,42,.16);color:#e3b45c}
+  .pill.erro{background:rgba(208,69,63,.16);color:#e88a84}
+  .pill.neutro{background:rgba(154,161,174,.14);color:var(--fraco)}
+  button,.botao{background:var(--azul);color:#fff;border:0;border-radius:7px;
+        padding:9px 16px;font-size:14px;font-weight:500;cursor:pointer;
+        text-decoration:none;display:inline-block}
+  button.secundario{background:transparent;border:1px solid var(--linha);
+        color:var(--txt)}
+  input,select{background:#11141a;border:1px solid var(--linha);color:var(--txt);
+        border-radius:7px;padding:8px 10px;font-size:14px}
+  label{display:block;font-size:12px;color:var(--fraco);margin-bottom:5px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
+  .metrica{background:#11141a;border:1px solid var(--linha);border-radius:8px;padding:14px}
+  .metrica .v{font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+  .metrica .r{font-size:12px;color:var(--fraco);margin-top:2px}
+  .aviso{background:rgba(200,146,42,.1);border:1px solid rgba(200,146,42,.3);
+         border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:16px}
+  a{color:#7aa5ff}
+  .fraco{color:var(--fraco)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Águiahub <span>· publicação no Mercado Livre</span>
+      <span style="font-size:11px;color:var(--fraco);border:1px solid var(--linha);border-radius:20px;padding:2px 8px;margin-left:6px">v{{ VERSAO }}</span></h1>
+  <a href="/" class="fraco" style="font-size:13px">Início</a>
+</header>
+<main>{% block conteudo %}{% endblock %}</main>
+</body>
+</html>
