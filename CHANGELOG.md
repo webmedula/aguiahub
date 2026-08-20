@@ -5,6 +5,31 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.9.0 — 20/08/2026
+
+**Cruzamento da fila inteira com a loja, de uma vez.**
+
+Confirmado que a leitura da loja funciona a partir do VPS (HTTP 200, produto
+lido com foto e estoque), o passo seguinte é responder de uma vez: *quantas das
+peças da planilha já estão no site?*
+
+- Botão **"Cruzar agora"** no topo da fila: baixa o catálogo inteiro da loja e
+  casa com todos os itens pendentes. As peças que já têm foto no site ficam
+  **prontas para anunciar** na hora.
+- **Baixa o catálogo uma vez, cruza em memória.** Consultar a loja item a item
+  para 1.334 peças custaria milhares de requisições ao WordPress da Águia; assim
+  são algumas dezenas.
+- **Casa por SKU e também pelo nome.** Vários produtos da loja estão com o campo
+  SKU vazio e trazem o código só no nome — foi o caso do injetor `A2C59513553`.
+  Ignorar isso deixaria essas peças de fora.
+- **Normaliza pontuação:** o site grava `0.445.025.016` e o ERP grava
+  `0445025016`. Sem normalizar, os dois nunca se encontrariam.
+- **Código curto não casa.** `1504` ou `19P` casariam com qualquer coisa.
+- O resultado mostra quantas ficaram prontas, **quanto valor isso destrava**,
+  quantas foram achadas e quantos produtos a loja tem.
+- Lista à parte as peças que **estão na loja mas sem foto** — cadastrando a
+  imagem no site, elas entram no próximo cruzamento.
+
 ## v0.8.1 — 20/08/2026
 
 **Campo único para o link, e diagnóstico da loja.**

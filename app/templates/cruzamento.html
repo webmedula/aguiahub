@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block titulo %}Cruzamento com a loja{% endblock %}
+{% block conteudo %}
+<div class="card" style="padding:26px">
+  <h2>Cruzamento com a loja da Águia — lote #{{ lote_id }}</h2>
+  <div class="grid">
+    <div class="metrica">
+      <div class="v">{{ resumo.com_foto }}</div>
+      <div class="r">prontos para anunciar</div>
+    </div>
+    <div class="metrica">
+      <div class="v">R$ {{ '{:,.0f}'.format(resumo.valor_com_foto).replace(',','.') }}</div>
+      <div class="r">valor destravado</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ resumo.casados }}</div>
+      <div class="r">achados na loja</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ resumo.pendentes }}</div>
+      <div class="r">itens conferidos</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ resumo.produtos_na_loja }}</div>
+      <div class="r">produtos na loja</div>
+    </div>
+  </div>
+
+  {% if resumo.sem_foto %}
+  <div class="aviso" style="margin-top:16px">
+    <strong>{{ resumo.sem_foto|length }} peça(s) estão na loja mas sem foto</strong>
+    e por isso não entram: {{ resumo.sem_foto[:12]|join(', ') }}{% if resumo.sem_foto|length > 12 %}…{% endif %}.
+    Cadastrando a foto na loja, elas passam a valer no próximo cruzamento.
+  </div>
+  {% endif %}
+
+  {% if resumo.com_foto %}
+  <p style="margin-top:18px">
+    <a class="botao" style="font-size:16px;padding:12px 20px"
+       href="/fila/{{ lote_id }}">Ir para a fila — {{ resumo.com_foto }} prontas</a></p>
+  {% else %}
+  <p class="fraco" style="margin-top:18px">
+    Nenhum item do lote foi encontrado na loja com foto. A fila continua pelo
+    caminho manual.</p>
+  <p><a class="botao secundario" href="/fila/{{ lote_id }}">Voltar para a fila</a></p>
+  {% endif %}
+</div>
+{% endblock %}

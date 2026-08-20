@@ -27,6 +27,19 @@
   {% endif %}
 </div>
 
+<div class="card" style="padding:20px;display:flex;gap:14px;align-items:center;
+     flex-wrap:wrap">
+  <div style="flex:1;min-width:260px">
+    <strong>Cruzar a fila inteira com a loja da Águia</strong>
+    <div class="fraco" style="font-size:13px">Procura todas as peças de uma vez
+      e deixa prontas as que já têm foto no site.</div>
+  </div>
+  <form method="post" action="/lotes/{{ lote['id'] }}/cruzar-loja">
+    <button class="secundario" type="submit"
+            style="font-size:15px;padding:11px 18px">Cruzar agora</button>
+  </form>
+</div>
+
 {% if not item %}
 <div class="card" style="text-align:center;padding:40px">
   <h2 style="font-size:20px">Acabou a fila</h2>

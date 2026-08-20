@@ -112,3 +112,46 @@ async def test_url_sem_slug_da_mensagem_util():
     with pytest.raises(LojaError) as exc:
         await buscar_por_url(f"{BASE}/produto/")
     assert "loja.aguiadiesel" in str(exc.value)
+
+
+# --- cruzamento com a planilha --------------------------------------------
+
+from app.loja import casar, indexar, normalizar_codigo   # noqa: E402
+
+
+def prod(nome, sku="", id_=1):
+    return _montar({"id": id_, "name": nome, "sku": sku,
+                    "prices": {"price": "100", "currency_minor_unit": 2},
+                    "images": [{"src": "x.png"}]}, BASE)
+
+
+def test_normalizar_ignora_pontos_do_site():
+    """O site grava '0.445.025.016' e o ERP grava '0445025016'."""
+    assert normalizar_codigo("0.445.025.016") == normalizar_codigo("0445025016")
+
+
+def test_casa_pelo_sku():
+    idx = indexar([prod("BOMBA CB18", sku="0445025016")])
+    assert casar("0445025016", idx) is not None
+
+
+def test_casa_pelo_codigo_no_nome_quando_sku_esta_vazio():
+    """Caso real: o injetor A2C59513553 está na loja com SKU vazio."""
+    idx = indexar([prod("INJETOR COMMON RAIL LAND ROVER 2.7 – A2C59513553")])
+    assert casar("A2C59513553", idx) is not None
+
+
+def test_casa_com_pontuacao_diferente_entre_loja_e_erp():
+    idx = indexar([prod("BOMBA DE ALTA PRESSÃO CB18 – 0.445.025.016")])
+    assert casar("0445025016", idx) is not None
+
+
+def test_codigo_curto_nao_casa():
+    """'1504' ou '19P' casariam com qualquer coisa — melhor não casar."""
+    idx = indexar([prod("PARAFUSO 1504 SEXTAVADO")])
+    assert casar("1504", idx) is None
+
+
+def test_codigo_ausente_na_loja_nao_casa():
+    idx = indexar([prod("BOMBA CB18", sku="0445025016")])
+    assert casar("XYZ99887766", idx) is None

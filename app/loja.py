@@ -224,3 +224,68 @@ async def buscar_por_codigo(codigo: str, limite: int = 5) -> list[ProdutoDaLoja]
             break
 
     return list(achados.values())[:limite]
+
+
+# ---------------------------------------------------------------------------
+# Catálogo inteiro, para cruzar com a planilha
+# ---------------------------------------------------------------------------
+
+def normalizar_codigo(texto: str) -> str:
+    """Tira pontuação e acento para comparar códigos.
+
+    O site grava '0.445.025.016' e o ERP grava '0445025016' — sem normalizar,
+    os dois nunca se encontram.
+    """
+    if not texto:
+        return ""
+    return re.sub(r"[^A-Za-z0-9]", "", str(texto)).upper()
+
+
+async def listar_catalogo(paginas_max: int = 60,
+                          por_pagina: int = 100) -> list[ProdutoDaLoja]:
+    """Baixa o catálogo inteiro da loja, paginado.
+
+    Consultar a loja item a item para 1.334 peças custaria milhares de
+    requisições ao WordPress da Águia. Baixando o catálogo uma vez e cruzando
+    em memória, são algumas dezenas de chamadas.
+    """
+    s = get_settings()
+    produtos: list[ProdutoDaLoja] = []
+
+    for pagina in range(1, paginas_max + 1):
+        lote, _ = await consultar_bruto({"page": pagina, "per_page": por_pagina})
+        if not lote:
+            break
+        produtos.extend(_montar(b, s.loja_base_url) for b in lote)
+        if len(lote) < por_pagina:
+            break
+
+    return produtos
+
+
+def indexar(produtos: list[ProdutoDaLoja]) -> dict[str, ProdutoDaLoja]:
+    """Monta um índice código -> produto, a partir do SKU e do nome.
+
+    Vários produtos da loja estão com o SKU vazio e trazem o código só no nome
+    (foi o caso do injetor A2C59513553). Por isso indexamos os dois.
+    """
+    indice: dict[str, ProdutoDaLoja] = {}
+
+    for p in produtos:
+        chaves = set()
+        if p.sku:
+            chaves.add(normalizar_codigo(p.sku))
+        # pega do nome os pedaços que parecem part number
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9.\-/]{4,}", p.nome):
+            chaves.add(normalizar_codigo(token))
+
+        for chave in chaves:
+            if len(chave) >= 5 and chave not in indice:
+                indice[chave] = p
+
+    return indice
+
+
+def casar(codigo: str, indice: dict[str, ProdutoDaLoja]) -> ProdutoDaLoja | None:
+    chave = normalizar_codigo(codigo)
+    return indice.get(chave) if len(chave) >= 5 else None

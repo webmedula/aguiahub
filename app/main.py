@@ -20,7 +20,8 @@ from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
 from app import loja
-from app.publisher import (analisar_lote, publicar_aprovados, publicar_da_loja,
+from app.publisher import (analisar_lote, cruzar_lote_com_loja,
+                           publicar_aprovados, publicar_da_loja,
                            resumir, vincular_por_link, vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
@@ -381,6 +382,21 @@ async def fila(request: Request, lote_id: int):
         "sugestao": sugestao,
         "da_loja": da_loja,
         "progresso": storage.progresso_da_fila(lote_id),
+    })
+
+
+@app.post("/lotes/{lote_id}/cruzar-loja", response_class=HTMLResponse)
+async def cruzar_loja(request: Request, lote_id: int):
+    """Cruza o lote inteiro com o catálogo da loja da Águia, de uma vez."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    try:
+        resumo = await cruzar_lote_com_loja(lote_id)
+    except loja.LojaError as exc:
+        raise HTTPException(400, str(exc))
+
+    return templates.TemplateResponse(request, "cruzamento.html", {
+        "request": request, "lote_id": lote_id, "resumo": resumo,
     })
 
 

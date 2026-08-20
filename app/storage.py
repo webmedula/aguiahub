@@ -247,6 +247,14 @@ def adiar_item(item_id: int) -> None:
             (datetime.now(timezone.utc).isoformat(), item_id))
 
 
+def itens_por_status(lote_id: int, status: str) -> list[sqlite3.Row]:
+    with conexao() as conn:
+        return conn.execute(
+            "SELECT * FROM itens WHERE lote_id = ? AND status = ? ORDER BY valor DESC",
+            (lote_id, status),
+        ).fetchall()
+
+
 def proximo_da_fila(lote_id: int, status: str = "na_fila") -> sqlite3.Row | None:
     """Devolve o próximo item a trabalhar: o de MAIOR VALOR ainda pendente."""
     with conexao() as conn:

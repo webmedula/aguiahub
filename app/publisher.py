@@ -408,6 +408,56 @@ def resumir(resultados: list) -> dict:
 DA_LOJA = "pronto_com_fotos"      # tem foto própria: pode virar anúncio direto
 
 
+async def cruzar_lote_com_loja(lote_id: int) -> dict:
+    """Cruza todos os itens pendentes do lote com o catálogo da loja.
+
+    Baixa o catálogo uma vez e casa em memória: para 1.334 itens, sai de
+    milhares de requisições ao site da Águia para algumas dezenas.
+    """
+    from app import loja
+
+    produtos = await loja.listar_catalogo()
+    indice = loja.indexar(produtos)
+
+    pendentes = storage.itens_por_status(lote_id, "na_fila")
+    casados = com_foto = 0
+    valor_com_foto = 0.0
+    sem_foto: list[str] = []
+
+    for row in pendentes:
+        p = loja.casar(row["sku"] or "", indice)
+        if p is None:
+            continue
+        casados += 1
+
+        if not p.fotos:
+            sem_foto.append(row["sku"])
+            continue
+
+        storage.atualizar_dados_catalogo(
+            row["id"],
+            status=DA_LOJA,
+            loja_url=p.url, loja_nome=p.nome, loja_sku=p.sku,
+            loja_preco=p.preco,
+            loja_fotos=json.dumps(p.fotos, ensure_ascii=False),
+            loja_descricao=p.descricao,
+            decidido_em=datetime.now(timezone.utc).isoformat(),
+            erro=None if p.em_estoque else
+                 "atenção: a loja marca este produto como fora de estoque",
+        )
+        com_foto += 1
+        valor_com_foto += float(row["valor"] or 0)
+
+    return {
+        "produtos_na_loja": len(produtos),
+        "pendentes": len(pendentes),
+        "casados": casados,
+        "com_foto": com_foto,
+        "sem_foto": sem_foto,
+        "valor_com_foto": valor_com_foto,
+    }
+
+
 async def vincular_qualquer(item_id: int, referencia: str) -> dict:
     """Aceita QUALQUER referência e decide sozinha o que fazer com ela.
 
