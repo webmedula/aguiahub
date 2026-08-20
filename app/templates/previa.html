@@ -15,45 +15,30 @@
   </p>
 </div>
 
-<div class="card">
-  <h2>Processar</h2>
-  <div class="aviso">
-    Esta etapa <strong>não publica nada</strong>. Ela consulta o catálogo do
-    Mercado Livre e monta a tela de conferência, onde você vê a foto e a ficha
-    de cada produto antes de aprovar. Comece com poucos itens.
-  </div>
-  <form method="post" action="/planilha/analisar">
-    <input type="hidden" name="arquivo_salvo" value="{{ arquivo }}">
-    <input type="hidden" name="regra_preco" value="{{ regra_preco }}">
-    <input type="hidden" name="percentual" value="{{ percentual }}">
-    <div class="grid">
-      <div>
-        <label>Abas (separadas por |, vazio = todas)</label>
-        <input type="text" name="abas" placeholder="Acima de R$1000,00" style="width:100%">
-      </div>
-      <div>
-        <label>Limite de itens (0 = sem limite)</label>
-        <input type="number" name="limite" value="20" min="0">
-      </div>
-    </div>
-    <p style="margin-top:14px"><button type="submit">Analisar catálogo</button></p>
-  </form>
-
-  <hr style="border:0;border-top:1px solid var(--linha);margin:20px 0">
-  <h2 style="font-size:15px">Ou monte a fila de trabalho</h2>
-  <p class="fraco" style="font-size:13px;margin-top:-6px">
+<div class="card" style="padding:26px">
+  <h2>Montar a fila de trabalho</h2>
+  <p class="fraco" style="font-size:14px;margin-top:-6px">
     Classifica a planilha inteira na hora, sem consultar o Mercado Livre, e
-    ordena por valor parado — a peça mais cara primeiro. É por aqui que a
-    pessoa do estoque trabalha.
+    ordena por <strong>valor parado</strong> — a peça mais cara primeiro.
+    Depois, na fila, dá para cruzar tudo com a loja da Águia de uma vez.
   </p>
   <form method="post" action="/planilha/triagem">
     <input type="hidden" name="arquivo_salvo" value="{{ arquivo }}">
     <input type="hidden" name="regra_preco" value="{{ regra_preco }}">
     <input type="hidden" name="percentual" value="{{ percentual }}">
-    <input type="text" name="abas" placeholder="Abas (vazio = todas)"
-           style="width:100%;max-width:420px">
-    <p style="margin-top:12px"><button type="submit">Montar fila de trabalho</button></p>
+    <div>
+      <label>Abas da planilha (vazio = todas)</label>
+      <input type="text" name="abas" placeholder="Acima de R$1000,00"
+             style="width:100%;max-width:420px;font-size:15px;padding:11px">
+    </div>
+    <p style="margin-top:16px">
+      <button type="submit" style="font-size:16px;padding:12px 22px">
+        Montar fila de trabalho</button></p>
   </form>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Dica: comece por <code>Acima de R$1000,00</code> — são 126 peças que somam
+    R$ 1.035.011, o grosso do dinheiro parado.
+  </p>
 </div>
 
 <div class="card">

@@ -5,6 +5,25 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.9.1 — 20/08/2026
+
+**Um caminho só.**
+
+Relato: o botão "Cruzar agora" não aparecia. A causa era estar na tela errada —
+a *Conferência* do lote #1, criada pelo fluxo antigo "Analisar catálogo". O botão
+vive na **fila de trabalho**, que é outro fluxo e outro lote.
+
+Dois caminhos concorrentes na mesma tela, um deles comprovadamente sem retorno,
+é convite ao erro — ainda mais para quem opera todo dia.
+
+- A tela de prévia agora oferece **só** *Montar fila de trabalho*. O fluxo
+  "Analisar catálogo" saiu da interface (a rota continua, para os lotes antigos).
+- A tela de conferência antiga passa a avisar que é a versão antiga e aponta o
+  caminho atual.
+- A lista de lotes na tela inicial marca cada lote como *fila de trabalho* ou
+  *tela antiga*, para não abrir o errado de novo.
+- A prévia sugere começar por `Acima de R$1000,00` — 126 peças, R$ 1.035.011.
+
 ## v0.9.0 — 20/08/2026
 
 **Cruzamento da fila inteira com a loja, de uma vez.**
