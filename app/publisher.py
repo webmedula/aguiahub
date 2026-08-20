@@ -39,6 +39,7 @@ PRECO_MINIMO = 1.0
 AGUARDANDO = "aguardando_aprovacao"   # casou com o catálogo, esperando o operador
 SEM_CATALOGO = "sem_catalogo"         # não achou match -> precisa de foto própria
 CATALOGO_INATIVO = "catalogo_inativo"  # achou, mas o produto não está ativo no ML
+SEM_CATEGORIA = "sem_categoria"       # produto ativo, mas não achei a categoria
 IGNORADO = "ignorado"                 # dado ruim, preço inválido ou já publicado
 ERRO = "erro"
 PUBLICADO = "publicado"
@@ -200,7 +201,12 @@ async def analisar_lote(
             melhor, recusas = await escolher_publicavel(client, candidatos)
 
             if melhor is None:
-                res.status = CATALOGO_INATIVO
+                # Separar os dois motivos importa: 'inativo' é limitação do
+                # catálogo do ML (só o vínculo manual resolve), 'sem categoria'
+                # é falha nossa de detecção e tem conserto no código.
+                so_categoria = (recusas and
+                                all("ategoria" in m for m in recusas))
+                res.status = SEM_CATEGORIA if so_categoria else CATALOGO_INATIVO
                 res.mensagem = ("nenhum produto de catálogo utilizável ("
                                 + "; ".join(recusas) + "). "
                                 + await _pista_de_mercado(client, p))
@@ -222,7 +228,8 @@ async def analisar_lote(
                      "catalog_product_id": cand.catalog_product_id if cand else None},
             status=r.status,
             erro=r.mensagem if r.status in (ERRO, IGNORADO, SEM_CATALOGO,
-                                            CATALOGO_INATIVO) else None,
+                                            CATALOGO_INATIVO,
+                                            SEM_CATEGORIA) else None,
             descricao_erp=r.descricao_erp,
             marca=r.marca,
             quantidade=r.quantidade,

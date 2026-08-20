@@ -5,6 +5,29 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.5.1 — 20/08/2026
+
+**Separação de motivos e exportação do lote.**
+
+Primeiro lote real analisado (20 itens da aba `Acima de R$1000,00`):
+4 prontos (20%), 13 `catalogo_inativo` (65%), 3 erro (15%).
+
+Os 65% estavam juntando dois problemas diferentes sob um rótulo só:
+
+- `catalogo_inativo` — o produto existe no catálogo do ML mas está
+  descontinuado. **Limitação do catálogo**; só o vínculo manual resolve.
+- `sem_categoria` — o produto está ativo, mas não conseguimos determinar a
+  categoria. **Falha nossa de detecção**, com conserto possível no código.
+
+Sem separar, não dá para saber quanto do problema é do ML e quanto é nosso —
+e portanto não dá para decidir onde investir esforço.
+
+- Novo status `sem_categoria`, distinto de `catalogo_inativo`.
+- Vínculo manual pelo link passa a valer também para `sem_categoria`.
+- **Exportação em CSV** do lote inteiro (link na tela de conferência), com
+  status, confiança, produto de catálogo e mensagem de erro por item. Abre no
+  Excel com acento correto.
+
 ## v0.5.0 — 19/08/2026
 
 **Vínculo manual pelo link do anúncio, e correção de erro mascarado.**

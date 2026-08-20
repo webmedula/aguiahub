@@ -1,12 +1,14 @@
 """Águiahub — publicação de anúncios no Mercado Livre a partir da planilha do ERP."""
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -220,6 +222,30 @@ async def conferencia(request: Request, lote_id: int):
         "outros": [i for i in itens if i["status"] != "aguardando_aprovacao"],
         "resumo": resumo,
     })
+
+
+@app.get("/lotes/{lote_id}/exportar.csv")
+async def exportar_lote(lote_id: int):
+    """Exporta o lote em CSV — para analisar fora, ou mandar para quem ajuda."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+
+    colunas = ["linha", "sku", "descricao_erp", "marca", "quantidade", "preco",
+               "status", "confianca", "catalog_product_id", "catalog_nome",
+               "catalog_category_id", "ml_item_id", "permalink", "erro"]
+    buf = io.StringIO()
+    escritor = csv.DictWriter(buf, fieldnames=colunas, extrasaction="ignore")
+    escritor.writeheader()
+    for item in storage.itens_do_lote(lote_id):
+        escritor.writerow({c: item[c] for c in colunas})
+
+    return Response(
+        # BOM para o Excel abrir com acento correto
+        content="\ufeff" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition":
+                 f'attachment; filename="aguiahub-lote-{lote_id}.csv"'},
+    )
 
 
 @app.post("/itens/{item_id}/vincular")
