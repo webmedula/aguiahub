@@ -5,6 +5,34 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.11.0 — 20/08/2026
+
+**O código estava na loja o tempo todo — só escrito de outro jeito.**
+
+Investigando o módulo de injeção da Fiat Toro (item 6 da planilha, código
+`0281036486`, R$ 47.864), descobri que a peça **já está na loja da Águia, com
+duas fotos**:
+
+`loja.aguiadiesel.com.br/produto/modulo-de-injecao-fiat-toro-jeep-renegade-jeep-compass-0-281-036-486/`
+
+O sistema não achava porque o ERP grava `0281036486` e a loja grava
+`0.281.036.486`. A busca do WooCommerce é literal: procura o texto exato. O
+cruzamento em lote já normalizava a pontuação e funcionava, mas a busca por
+código avulso — a que roda quando alguém cola só o número no campo — não.
+
+- `variantes_de_codigo()` gera as formas de escrever o mesmo part number
+  (cru, com ponto, com espaço, com hífen), agrupando os dígitos de três em
+  três a partir da direita, que é a convenção Bosch/Delphi.
+- `buscar_por_codigo()` tenta SKU e busca livre em cada variante.
+- `indexar()` passou a exigir que a chave tenha ao menos um dígito. Sem isso,
+  palavras do nome do produto (`RENEGADE`, `COMPASS`) viravam chave de índice
+  e podiam casar por acidente com um código do ERP — o mesmo tipo de falso
+  positivo que gerou os quatro casos ruins da v0.4.0.
+
+Seis testes novos, 82 no total.
+
+---
+
 ## v0.10.0 — 20/08/2026
 
 **Foto tirada na hora, direto da fila.**

@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest                                          # noqa: E402
 from app.loja import (LojaError, _limpar_html, _montar,   # noqa: E402
-                      _slug_da_url, buscar_por_url)
+                      _slug_da_url, buscar_por_url,
+                      variantes_de_codigo)
 
 BASE = "https://loja.aguiadiesel.com.br"
 
@@ -155,3 +156,43 @@ def test_codigo_curto_nao_casa():
 def test_codigo_ausente_na_loja_nao_casa():
     idx = indexar([prod("BOMBA CB18", sku="0445025016")])
     assert casar("XYZ99887766", idx) is None
+
+
+# ---------------------------------------------------------------------------
+# Variantes de escrita do código (v0.11.0)
+# ---------------------------------------------------------------------------
+
+def test_variante_com_pontos_no_padrao_bosch():
+    """Caso real: ERP tem '0281036486', a loja tem '0.281.036.486'.
+
+    A busca do WooCommerce é literal, então sem essa variante o módulo da
+    Fiat Toro (item 6, R$ 47.864) aparecia como ausente da loja.
+    """
+    assert "0.281.036.486" in variantes_de_codigo("0281036486")
+
+
+def test_variante_do_injetor_cb18():
+    assert "0.445.025.016" in variantes_de_codigo("0445025016")
+
+
+def test_codigo_com_letras_nao_ganha_pontuacao():
+    """A2C59513553 é Continental, não segue o agrupamento Bosch."""
+    assert variantes_de_codigo("A2C59513553") == ["A2C59513553"]
+
+
+def test_variantes_incluem_a_forma_crua_primeiro():
+    formas = variantes_de_codigo("0.281.036.486")
+    assert formas[0] == "0.281.036.486"
+    assert "0281036486" in formas
+
+
+def test_variantes_de_codigo_vazio():
+    assert variantes_de_codigo("") == []
+    assert variantes_de_codigo("   ") == []
+
+
+def test_palavra_do_nome_nao_vira_chave():
+    """'RENEGADE' no nome não pode casar com um código do ERP."""
+    idx = indexar([prod("MÓDULO FIAT TORO / JEEP RENEGADE – 0.281.036.486")])
+    assert casar("RENEGADE", idx) is None
+    assert casar("0281036486", idx) is not None

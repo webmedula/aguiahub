@@ -199,11 +199,52 @@ async def buscar_por_url(url: str) -> ProdutoDaLoja | None:
     return _montar(resultados[0], s.loja_base_url) if resultados else None
 
 
+def variantes_de_codigo(codigo: str) -> list[str]:
+    """Gera as formas de escrever o mesmo part number.
+
+    Descoberto em produção com o módulo da Fiat Toro: a planilha do ERP grava
+    ``0281036486`` e a loja grava ``0.281.036.486``. A busca do WooCommerce é
+    literal — procura o texto exato — então buscar pelo código do ERP não
+    achava um produto que estava lá, com foto, o tempo todo. Foi por isso que
+    o item 6 (R$ 47.864) aparecia como "não tenho na loja".
+
+    Convenção Bosch/Delphi: dígitos agrupados de três em três a partir da
+    direita ('0.281.036.486', '0.445.025.016').
+    """
+    codigo = (codigo or "").strip()
+    if not codigo:
+        return []
+
+    formas = [codigo]
+    nu = re.sub(r"[^A-Za-z0-9]", "", codigo)
+
+    def _add(valor: str) -> None:
+        if valor and valor not in formas:
+            formas.append(valor)
+
+    _add(nu)
+
+    if nu.isdigit() and 7 <= len(nu) <= 13:
+        grupos: list[str] = []
+        resto = nu
+        while len(resto) > 3:
+            grupos.insert(0, resto[-3:])
+            resto = resto[:-3]
+        if resto:
+            grupos.insert(0, resto)
+        for separador in (".", " ", "-"):
+            _add(separador.join(grupos))
+
+    return formas
+
+
 async def buscar_por_codigo(codigo: str, limite: int = 5) -> list[ProdutoDaLoja]:
     """Procura na loja pelo código da peça.
 
-    Tenta o SKU exato primeiro. Se não achar, busca livre — o site às vezes
-    grava o código com pontos ('0.445.025.016') enquanto o ERP grava sem.
+    Tenta o SKU exato primeiro e depois a busca livre, em cada forma de
+    escrever o código (ver ``variantes_de_codigo``). Para na primeira que
+    devolver resultado — não adianta gastar requisição no WordPress da Águia
+    depois de já ter achado.
     """
     codigo = (codigo or "").strip()
     if not codigo:
@@ -211,8 +252,11 @@ async def buscar_por_codigo(codigo: str, limite: int = 5) -> list[ProdutoDaLoja]
 
     s = get_settings()
     achados: dict[int, ProdutoDaLoja] = {}
+    formas = variantes_de_codigo(codigo)
 
-    for params in ({"sku": codigo}, {"search": codigo}):
+    tentativas = [{"sku": f} for f in formas] + [{"search": f} for f in formas]
+
+    for params in tentativas:
         try:
             for bruto in await _consultar(params):
                 p = _montar(bruto, s.loja_base_url)
@@ -280,7 +324,10 @@ def indexar(produtos: list[ProdutoDaLoja]) -> dict[str, ProdutoDaLoja]:
             chaves.add(normalizar_codigo(token))
 
         for chave in chaves:
-            if len(chave) >= 5 and chave not in indice:
+            # Exigir dígito evita que palavras do nome ('RENEGADE', 'COMPASS')
+            # virem chave e casem por acidente com um código do ERP.
+            if len(chave) >= 5 and any(c.isdigit() for c in chave) \
+                    and chave not in indice:
                 indice[chave] = p
 
     return indice
