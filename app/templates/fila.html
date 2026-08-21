@@ -261,10 +261,10 @@
 </div>
 
 <div class="card" style="padding:26px">
-  <h2 style="font-size:15px">Achou a peça? Cole o link aqui</h2>
+  <h2 style="font-size:15px">Está na loja da Águia? Cole o link aqui</h2>
   <p class="fraco" style="font-size:14px;margin-top:-6px">
-    Serve tanto o link da <strong>loja da Águia</strong> quanto o do
-    <strong>Mercado Livre</strong>. O sistema reconhece sozinho.
+    Procure a peça no site pelo código, copie o endereço da página do produto
+    e cole abaixo. O anúncio sai com as nossas próprias fotos e descrição.
   </p>
 
   <div style="display:flex;gap:14px;flex-wrap:wrap;margin:14px 0">
@@ -272,25 +272,47 @@
        style="font-size:15px;padding:11px 18px"
        href="https://loja.aguiadiesel.com.br/?s={{ item['sku'] | urlencode }}&post_type=product">
        Procurar na loja da Águia ↗</a>
-    <a class="botao secundario" target="_blank" rel="noopener"
-       style="font-size:15px;padding:11px 18px"
-       href="https://lista.mercadolivre.com.br/{{ item['sku'] | urlencode }}">
-       Procurar no Mercado Livre ↗</a>
   </div>
 
   <form method="post" action="/itens/{{ item['id'] }}/vincular"
         style="display:flex;gap:10px;flex-wrap:wrap">
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
     <input type="text" name="referencia" required autofocus
-           placeholder="cole aqui o link da peça (loja da Águia ou Mercado Livre)"
+           placeholder="cole aqui o link da peça na loja da Águia"
            style="flex:1;min-width:320px;font-size:16px;padding:12px">
     <button type="submit" style="font-size:16px;padding:12px 20px">Usar esta peça</button>
   </form>
 
   <p class="fraco" style="font-size:13px;margin-bottom:0">
-    A loja da Águia é o melhor caminho: o anúncio sai com as nossas próprias
-    fotos. No Mercado Livre, copie o endereço que tem <code>/p/</code> ou
-    <code>/up/</code> — o link do anúncio de outro vendedor não funciona.
+    Link do <strong>Mercado Livre não funciona</strong> — o ML não libera
+    esses dados para aplicações. Se a peça não está na loja, use a pesquisa
+    aqui embaixo ou a foto aqui em cima.
+  </p>
+</div>
+
+<div class="card" style="padding:26px">
+  <h2 style="font-size:15px">Achou a peça em outro site? Cole o link para ler a ficha</h2>
+  <p class="fraco" style="font-size:14px;margin-top:-6px">
+    Site de fabricante, de fornecedor, de concorrente — qualquer um. O sistema
+    lê a <strong>ficha técnica</strong>: em quais veículos aplica, códigos
+    equivalentes, marca. Serve para confirmar que é a peça certa e para
+    melhorar o título do anúncio.
+  </p>
+
+  <form method="post" action="/itens/{{ item['id'] }}/pesquisar"
+        style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <input type="url" name="url" required
+           placeholder="cole aqui o link da página do produto em qualquer site"
+           style="flex:1;min-width:320px;font-size:16px;padding:12px">
+    <button class="secundario" type="submit"
+            style="font-size:16px;padding:12px 20px">Ler a ficha</button>
+  </form>
+
+  <p class="fraco" style="font-size:13px;margin-bottom:0">
+    Nada é publicado a partir daí sem você confirmar. <strong>Foto e texto do
+    site continuam sendo dele</strong> — o que o sistema aproveita é o dado
+    técnico, que é a realidade da peça.
   </p>
 </div>
 

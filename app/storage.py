@@ -84,6 +84,11 @@ _MIGRACOES = {
         "loja_preco":         "REAL",
         "loja_fotos":         "TEXT",
         "loja_descricao":     "TEXT",
+        # De onde vieram os dados e as fotos deste item. Fica gravado para
+        # dar para rastrear a origem de qualquer anúncio depois — se um dia
+        # chegar reclamação de imagem, dá para responder com precisão em vez
+        # de adivinhar.
+        "fonte_dados":        "TEXT",
     },
 }
 
@@ -365,7 +370,8 @@ def atualizar_dados_catalogo(item_id: int, **campos) -> None:
                   "catalog_foto", "catalog_permalink", "catalog_category_id",
                   "catalog_atributos", "erro", "preco", "decidido_em",
                   "loja_url", "loja_nome", "loja_sku", "loja_preco",
-                  "loja_fotos", "loja_descricao"}
+                  "loja_fotos", "loja_descricao", "fonte_dados",
+                  "aplicacao", "marca"}
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
         return

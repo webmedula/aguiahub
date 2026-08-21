@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block titulo %}Ficha encontrada{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Ficha encontrada em {{ dados.dominio }}</h2>
+    <div class="fraco" style="font-size:13px">
+      Confira se é a mesma peça antes de aproveitar qualquer coisa.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+<div class="card" style="border-color:{{ 'rgba(46,163,107,.5)' if confere_codigo
+     else 'rgba(200,146,42,.5)' }}">
+  {% if confere_codigo %}
+    <h2 style="margin-top:0">✓ O código bate</h2>
+    <p style="margin:0">O código <code>{{ item['sku'] }}</code> da planilha
+      aparece na ficha do site. Boa chance de ser a mesma peça — ainda assim,
+      olhe a aplicação abaixo antes de aproveitar.</p>
+  {% else %}
+    <h2 style="margin-top:0">Atenção: o código não bate</h2>
+    <p style="margin:0">Não achei <code>{{ item['sku'] }}</code> nos códigos
+      dessa página. Pode ser peça equivalente, pode ser outra peça. <strong>Só
+      aproveite se você reconhecer a peça.</strong></p>
+    <p class="fraco" style="font-size:13px;margin-bottom:0">
+      Já aconteceu neste projeto de um corpo distribuidor casar com um livro.
+      Por isso a confirmação é sua, não do sistema.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Comparação</h2>
+  <table>
+    <tr><th style="width:150px"></th>
+        <th>Na planilha do ERP</th><th>No site</th></tr>
+    <tr>
+      <td class="fraco">Descrição</td>
+      <td>{{ item['descricao_erp'] }}</td>
+      <td><strong>{{ dados.nome }}</strong></td>
+    </tr>
+    <tr>
+      <td class="fraco">Código</td>
+      <td style="font-family:ui-monospace,monospace">{{ item['sku'] }}</td>
+      <td style="font-family:ui-monospace,monospace">
+        {{ dados.codigos | join(' · ') or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="fraco">Marca</td>
+      <td>{{ item['marca'] or '—' }}</td>
+      <td>{{ dados.marca or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="fraco">Aplicação</td>
+      <td>{{ item['aplicacao'] or '—' }}</td>
+      <td>{{ dados.aplicacao or '—' }}</td>
+    </tr>
+    <tr>
+      <td class="fraco">Preço</td>
+      <td>R$ {{ '%.2f'|format(item['preco'] or 0) }}</td>
+      <td>{{ ('R$ %.2f'|format(dados.preco)) if dados.preco else '—' }}
+        {% if dados.preco %}
+        <div class="fraco" style="font-size:11px">referência de mercado</div>
+        {% endif %}</td>
+    </tr>
+  </table>
+</div>
+
+{% if dados.atributos %}
+<div class="card">
+  <h2>Ficha técnica do site</h2>
+  <table>
+    {% for chave, valor in dados.atributos.items() %}
+    <tr><th style="width:200px">{{ chave }}</th><td>{{ valor }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if dados.fotos %}
+<div class="card" style="border-color:rgba(46,163,107,.4)">
+  <h2>Fotos de {{ dados.dominio }}</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Este domínio está na sua lista de fontes autorizadas
+    (<code>FONTES_IMAGEM_AUTORIZADAS</code>) — ou seja, você declarou ter
+    direito de usar este material.
+  </p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    {% for f in dados.fotos[:6] %}
+    <img src="{{ f }}" alt="" loading="lazy"
+         style="width:120px;height:120px;object-fit:contain;background:#fff;
+                border-radius:8px;border:1px solid var(--linha)">
+    {% endfor %}
+  </div>
+</div>
+{% elif dados.fotos_bloqueadas %}
+<div class="card">
+  <h2>Fotos</h2>
+  <p style="margin:0">A página tem {{ dados.fotos_bloqueadas }} foto(s), mas
+    <strong>{{ dados.dominio }} não está na sua lista de fontes autorizadas</strong>,
+    então elas não são aproveitadas.</p>
+  <p class="fraco" style="font-size:13px">
+    Foto de site alheio é obra protegida: usar sem direito derruba anúncio por
+    denúncia e arrisca a conta da Águia Parts. Se este é um fornecedor de quem
+    você tem direito de usar o material, acrescente
+    <code>{{ dados.dominio }}</code> em <code>FONTES_IMAGEM_AUTORIZADAS</code>
+    no EasyPanel. Senão, o caminho da foto é a loja da Águia ou a câmera.
+  </p>
+</div>
+{% endif %}
+
+{% if dados.descricao_referencia %}
+<div class="card">
+  <h2>Descrição do site <span class="fraco" style="font-weight:400">·
+      referência, não vai para o anúncio</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Serve para você conferir se é a peça certa. O texto do anúncio é montado a
+    partir dos dados da Águia — texto de site alheio tem dono.
+  </p>
+  <div style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
+              padding:14px;font-size:13px;max-height:260px;overflow-y:auto;
+              white-space:pre-wrap">{{ dados.descricao_referencia }}</div>
+</div>
+{% endif %}
+
+{% if dados.avisos %}
+<div class="aviso">
+  {% for a in dados.avisos %}<div>{{ a }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:260px">
+    <strong>É a mesma peça?</strong>
+    <div class="fraco" style="font-size:13px">
+      {% if dados.fotos %}
+        <strong>Usar a ficha e as fotos</strong> deixa a peça pronta para
+        anunciar. Fica gravado que as imagens vieram de
+        <code>{{ dados.dominio }}</code>, para dar para rastrear depois.
+        O texto do anúncio continua sendo montado a partir dos dados da Águia.
+      {% else %}
+        Aproveitar guarda na peça a <strong>aplicação</strong> e a
+        <strong>marca</strong> que faltavam — isso melhora o título e a ficha
+        do anúncio.
+      {% endif %}
+    </div>
+  </div>
+  {% if dados.fotos %}
+  <form method="post" action="/itens/{{ item['id'] }}/usar-ficha">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <input type="hidden" name="url" value="{{ dados.url }}">
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Usar esta ficha e as {{ dados.fotos|length }} foto(s)</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/itens/{{ item['id'] }}/aplicar-pesquisa">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <input type="hidden" name="url" value="{{ dados.url }}">
+    <button class="secundario" type="submit">Só aproveitar os dados técnicos</button>
+  </form>
+  <a class="botao secundario" href="/fila/{{ lote_id }}">Não é — voltar</a>
+  <a class="fraco" style="font-size:13px" href="{{ dados.url }}"
+     target="_blank" rel="noopener">abrir a página original ↗</a>
+</div>
+
+{% endblock %}

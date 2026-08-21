@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block titulo %}O link do Mercado Livre não serve{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="max-width:720px;margin:24px auto;padding:28px">
+  <h2 style="font-size:19px;margin-top:0">O link do Mercado Livre não serve</h2>
+  <p style="font-size:16px;line-height:1.6">{{ mensagem }}</p>
+  <p class="fraco" style="font-size:14px">
+    Isso vale para qualquer endereço do ML — de anúncio, de produto, com
+    <code>/p/</code>, com <code>/up/</code>, tanto faz. Não é o link que está
+    errado: é o Mercado Livre que fechou esses dados para aplicações.
+    <strong>Não perca tempo procurando outro endereço.</strong>
+  </p>
+
+  {% if item %}
+  <div style="margin:22px 0;padding:16px;background:#11141a;border-radius:8px;
+              border:1px solid var(--linha)">
+    <div class="fraco" style="font-size:12px">PEÇA</div>
+    <div style="font-size:17px;font-weight:600">{{ item['descricao_erp'] }}</div>
+    <div class="fraco" style="font-family:ui-monospace,monospace;font-size:13px">
+      {{ item['sku'] }}</div>
+  </div>
+  {% endif %}
+
+  <h2 style="font-size:15px;margin-bottom:6px">O que funciona para esta peça</h2>
+
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <div style="padding:16px;border:1px solid rgba(46,163,107,.4);
+                border-radius:8px;background:rgba(46,163,107,.06)">
+      <strong>1. A peça está na loja da Águia?</strong>
+      <div class="fraco" style="font-size:13px;margin:4px 0 10px">
+        Procure no site pelo código. Se achar, copie o endereço da página e
+        cole no campo da fila — o anúncio sai com as nossas fotos.
+      </div>
+      <a class="botao" target="_blank" rel="noopener"
+         href="https://loja.aguiadiesel.com.br/?s={{ item['sku'] if item else '' }}&post_type=product"
+         >Procurar na loja da Águia ↗</a>
+    </div>
+
+    <div style="padding:16px;border:1px solid var(--linha);border-radius:8px">
+      <strong>2. Não está na loja? Tire uma foto.</strong>
+      <div class="fraco" style="font-size:13px;margin:4px 0 10px">
+        É o caminho que não depende de ninguém. No celular o botão abre a
+        câmera direto. Foi assim que o primeiro anúncio entrou no ar.
+      </div>
+      <a class="botao" href="/fila/{{ lote_id }}">Voltar para a fila e fotografar</a>
+    </div>
+  </div>
+
+  <p class="fraco" style="font-size:13px;margin-top:20px">
+    Se não for nenhum dos dois agora, use na fila
+    <em>não tenho certeza — deixar para o João</em> e siga para a próxima peça.
+  </p>
+
+  <p style="margin-top:18px">
+    <a class="botao secundario" href="/fila/{{ lote_id }}">Voltar para a fila</a>
+  </p>
+</div>
+
+{% endblock %}

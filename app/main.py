@@ -18,13 +18,16 @@ from app.config import get_settings
 from app.version import VERSAO, LANCADA_EM
 from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
-from app.ml.catalog import buscar_no_catalogo, escolher_publicavel
+from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
+                            escolher_publicavel)
 from app import loja
 from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            publicar_aprovados, publicar_com_fotos_proprias,
                            corrigir_fotos, publicar_da_loja,
                            publicar_selecionados,
+                           aplicar_dados_da_pesquisa, pesquisar_em_site,
+                           usar_ficha_da_pesquisa,
                            resumir, testar_item, vincular_por_link,
                            vincular_qualquer,
                            vincular_produto_da_loja)
@@ -152,6 +155,11 @@ async def home(request: Request):
         "diagnostico": diagnostico,
         "lotes": storage.listar_lotes(),
         "problemas_config": s.validate(),
+        # mostra na tela quais domínios estão autorizados a ceder imagem — sem
+        # isso não há como confirmar que a variável do EasyPanel pegou
+        "fontes_imagem": [d.strip() for d in
+                          (s.fontes_imagem_autorizadas or "").split(",")
+                          if d.strip()],
     })
 
 
@@ -465,6 +473,44 @@ async def rota_corrigir_fotos(item_id: int, lote_id: int = Form(...)):
                             status_code=303)
 
 
+@app.post("/itens/{item_id}/pesquisar", response_class=HTMLResponse)
+async def pesquisar(request: Request, item_id: int, url: str = Form(...),
+                    lote_id: int = Form(...)):
+    """Lê a ficha da peça num site qualquer e mostra para conferir."""
+    resultado = await pesquisar_em_site(item_id, url)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return templates.TemplateResponse(request, "pesquisa.html", {
+        "request": request, "lote_id": lote_id,
+        "item": resultado["item"], "dados": resultado["dados"],
+        "confere_codigo": resultado["confere_codigo"],
+    })
+
+
+@app.post("/itens/{item_id}/usar-ficha")
+async def usar_ficha(item_id: int, url: str = Form(...),
+                     lote_id: int = Form(...)):
+    """Deixa a peça pronta com a ficha e as fotos do site pesquisado."""
+    resultado = await pesquisar_em_site(item_id, url)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    usada = usar_ficha_da_pesquisa(item_id, resultado["dados"])
+    if not usada["ok"]:
+        raise HTTPException(400, usada["mensagem"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
+@app.post("/itens/{item_id}/aplicar-pesquisa")
+async def aplicar_pesquisa(item_id: int, url: str = Form(...),
+                           lote_id: int = Form(...)):
+    """Guarda na peça os fatos técnicos confirmados pela pessoa."""
+    resultado = await pesquisar_em_site(item_id, url)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    aplicar_dados_da_pesquisa(item_id, resultado["dados"])
+    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+
+
 @app.get("/itens/{item_id}/testar", response_class=HTMLResponse)
 async def testar(request: Request, item_id: int):
     """Pergunta ao Mercado Livre se ele aceitaria o anúncio — sem publicar."""
@@ -682,13 +728,21 @@ async def exportar_lote(lote_id: int):
 
 
 @app.post("/itens/{item_id}/vincular")
-async def vincular(item_id: int, referencia: str = Form(...),
+async def vincular(request: Request, item_id: int, referencia: str = Form(...),
                    lote_id: int = Form(...)):
     """Campo único: aceita link da loja, link do ML, ou código solto."""
     try:
         resultado = await vincular_qualquer(item_id, referencia)
     except loja.LojaError as exc:
         raise HTTPException(400, str(exc))
+    except CaminhoDoMLFechado as exc:
+        # Beco sem saída de verdade: não adianta pedir outro link. A tela
+        # mostra as duas saídas que funcionam, com botão.
+        return templates.TemplateResponse(
+            request, "sem_saida_ml.html",
+            {"request": request, "mensagem": str(exc),
+             "item": storage.item(item_id), "lote_id": lote_id},
+            status_code=400)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
     except MLApiError as exc:

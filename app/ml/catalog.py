@@ -21,6 +21,14 @@ from app.config import get_settings
 from app.ml.client import MLClient, MLApiError
 
 
+class CaminhoDoMLFechado(ValueError):
+    """O link é do Mercado Livre e não há como extrair nada dele.
+
+    Tipo próprio para a tela poder oferecer as saídas que funcionam (foto da
+    loja, foto do estoque) em vez de repetir uma instrução impossível.
+    """
+
+
 @dataclass
 class CandidatoCatalogo:
     catalog_product_id: str
@@ -280,18 +288,20 @@ async def produto_do_anuncio(client: MLClient, referencia: str) -> dict:
                 continue
             raise
 
-    if bloqueios:
-        raise ValueError(
-            "O Mercado Livre não deixa a aplicação ler anúncios de outros "
-            "vendedores (erro 403). Em vez do link do anúncio, copie o link da "
-            "PÁGINA DO PRODUTO — o endereço que tem /p/ ou /up/ no meio. "
-            "Para chegar nela, clique no nome do produto dentro do anúncio."
-        )
-
-    raise ValueError(
-        "Não encontrei esse produto no Mercado Livre. Confira se o link está "
-        "completo e se a página ainda existe."
+    # Aqui o caminho acabou de verdade. Mandar o operador procurar uma "página
+    # do produto" é perda de tempo: o ML fechou a leitura de dados de terceiros
+    # para aplicações, e nas dezenas de tentativas deste projeto nenhum link do
+    # Mercado Livre — nem /p/, nem /up/, nem wid — trouxe informação alguma.
+    # Melhor dizer que não vai dar e apontar o que funciona.
+    raise CaminhoDoMLFechado(
+        "O Mercado Livre não libera para aplicações os dados de anúncios e "
+        "produtos de outros vendedores. Não adianta procurar outro link: "
+        "nenhum endereço do ML vai funcionar aqui."
+        if bloqueios else
+        "Não encontrei esse endereço no Mercado Livre — e, de qualquer forma, "
+        "o ML não libera para aplicações os dados de anúncios de terceiros."
     )
+
 
 
 def _extrair_foto(produto: dict) -> str:

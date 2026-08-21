@@ -5,6 +5,141 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.21.0 — 21/08/2026
+
+**A pesquisa passa a alimentar o anúncio.**
+
+O João informou que a Águia tem autorização de revenda e de uso das imagens
+dos produtos que vai anunciar. Faltava o sistema aproveitar isso: até aqui a
+pesquisa lia a ficha mas não tinha caminho para virar anúncio.
+
+- Botão **"Usar esta ficha e as N fotos"** na tela de pesquisa. Deixa a peça
+  pronta para publicar, com as fotos do site, aplicação e marca preenchidas.
+  Continua tendo o botão menor de só aproveitar os dados técnicos.
+- **A origem fica gravada.** Cada item guarda em `fonte_dados` o domínio de
+  onde vieram as imagens. Se um dia chegar reclamação sobre a imagem de algum
+  anúncio, dá para responder de onde veio em vez de adivinhar — com 1.334
+  peças, isso deixa de ser detalhe.
+- `FONTES_IMAGEM_AUTORIZADAS` aceita `*` para liberar qualquer fonte. Existe
+  porque a decisão é do dono do negócio; continua sendo escolha explícita e
+  nunca o padrão.
+
+*O que continua fora, e por quê.* A **descrição** do site não vai para o
+anúncio, mesmo com a fonte autorizada. Licença de uso da imagem do produto e
+direito sobre o texto de vendas que outra empresa escreveu são coisas
+diferentes, e o segundo raramente está no contrato de revenda. O texto do
+anúncio continua sendo montado a partir dos dados da Águia. Tem teste
+garantindo.
+
+A distinção que vale guardar: a licença de revenda cobre o material do
+**fabricante**. A fotografia que outro revendedor produziu no estúdio dele é
+obra dele — ser oficial Bosch não dá direito sobre a foto de outra loja. Por
+isso a recomendação continua sendo listar os domínios dos fabricantes em vez
+de usar o curinga.
+
+Cinco testes novos, 158 no total.
+
+---
+
+## v0.20.1 — 21/08/2026
+
+**Dá para ver quais fontes de imagem estão autorizadas.**
+
+O João informou que a Águia é revendedora oficial. Isso muda o quadro para o
+material dos fabricantes que ela representa — e a tela precisava mostrar se a
+configuração pegou, em vez de obrigar a testar colando um link.
+
+- A tela inicial lista os domínios de `FONTES_IMAGEM_AUTORIZADAS`. Vazio, diz
+  que nenhum site cede imagem e explica como autorizar.
+- Mesmo espírito do número da versão no cabeçalho e do aviso de volume: o
+  estado do sistema fica visível, não adivinhado.
+
+Um teste novo, 153 no total.
+
+---
+
+## v0.20.0 — 21/08/2026
+
+**Ler a ficha da peça em qualquer site.**
+
+Ideia do João, e boa: o Mercado Livre fechou os dados de terceiros, mas a
+ficha técnica das peças está publicada em site de fabricante, de fornecedor e
+de concorrente. Ler isso encurta o trabalho de identificar a peça.
+
+Campo novo na fila: cole o link da página do produto em **qualquer site**. O
+sistema lê e mostra uma comparação lado a lado — o que está na planilha do
+ERP contra o que está no site.
+
+- **Lê dado estruturado, não HTML adivinhado.** Prioriza o JSON-LD
+  `schema.org/Product` e as meta tags OpenGraph, que os próprios sites
+  publicam para aparecer no Google. Muito mais estável do que raspar o HTML,
+  que muda a cada troca de tema.
+- **Confere o código.** Diz na cara se o código da planilha aparece na ficha
+  do site. Quando não aparece, avisa em amarelo e lembra que a confirmação é
+  da pessoa. Código com menos de 5 caracteres nunca confere — foi o que
+  produziu os quatro casamentos ruins da v0.4.0.
+- **Aproveita aplicação e marca**, que são os campos que faltam na planilha e
+  melhoram o título e a ficha do anúncio. Só preenche o que está vazio: não
+  sobrescreve dado da Águia.
+- **Respeita o robots.txt** do site. É o sinal que o site publica dizendo o
+  que aceita que robô leia; ignorar é o caminho para IP bloqueado e problema
+  jurídico.
+
+*Sobre foto e texto — a parte que não fiz como pedido.*
+
+O João pediu dados, descrição e fotos. Dados eu trago; foto e texto de site
+alheio, não — e a razão não é jurídica no abstrato, é concreta: foto e texto
+descritivo são obra de quem publicou, e o Mercado Livre derruba anúncio por
+denúncia de cópia e suspende conta de vendedor reincidente. Seria construir
+1.334 anúncios em cima da conta que pode cair.
+
+O que fiz no lugar:
+
+- **Descrição** aparece na tela como *referência* — para conferir se é a
+  mesma peça — e tem teste garantindo que nenhum caminho de publicação a
+  utiliza. O texto do anúncio continua sendo montado a partir dos dados da
+  Águia.
+- **Foto** tem uma exceção, e ela é do João decidir: os domínios listados em
+  `FONTES_IMAGEM_AUTORIZADAS` (vazio por padrão). É onde entra o fabricante
+  ou fornecedor de quem a Águia é distribuidora e cujo material tem direito
+  de usar. Quem sabe o que foi contratado é o dono do negócio; o sistema
+  respeita a lista. Fora dela, a tela diz quantas fotos existem, por que não
+  são usadas, e como autorizar o domínio se for o caso.
+
+Dezesseis testes novos, 152 no total.
+
+---
+
+## v0.19.0 — 21/08/2026
+
+**"Não adianta essa mensagem, não sei como achar essa página do produto."**
+
+Relato justo, e o problema é maior que a mensagem: **essa página não resolve
+nada**. A mensagem mandava caçar um endereço com `/p/` ou `/up/` como se
+fosse a solução. Em todo o projeto, nenhum link do Mercado Livre — de
+anúncio, de produto, com `wid`, com `/p/`, com `/up/` — trouxe informação
+alguma. O ML fechou os dados de terceiros para aplicações e não vai reabrir
+porque o operador copiou outro endereço.
+
+Mandar alguém procurar uma saída que não existe é pior do que dizer que não
+tem saída. Isso gastou tempo do João mais de uma vez.
+
+- A mensagem agora diz a verdade: **nenhum endereço do ML vai funcionar**,
+  não adianta procurar outro.
+- E não termina em beco: a tela mostra a peça e as **duas saídas que
+  funcionam**, com botão. Procurar na loja da Águia (já com o código na
+  busca) ou voltar para a fila e fotografar. Mais o lembrete de que existe o
+  *deixar para o João* quando não for nenhuma das duas agora.
+- O botão **"Procurar no Mercado Livre"** saiu da fila. Ele só levava a
+  pessoa a copiar um link que ia falhar.
+- O campo de link passou a se chamar *"Está na loja da Águia? Cole o link
+  aqui"* — é o que ele de fato faz.
+
+Três testes novos, incluindo um que varre os templates garantindo que a
+instrução impossível não volte. 136 no total.
+
+---
+
 ## v0.18.0 — 21/08/2026
 
 **Primeiro anúncio no ar.**

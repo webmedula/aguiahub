@@ -1060,3 +1060,121 @@ async def corrigir_fotos(item_id: int) -> dict:
                      f"({origem})."
                      + (" Anúncio reativado." if reativado else "")),
     }
+
+
+PESQUISADO = "dados_de_pesquisa"   # ficha vinda de site externo, sem foto
+
+
+async def pesquisar_em_site(item_id: int, url: str) -> dict:
+    """Lê a ficha da peça num site qualquer e devolve para a tela conferir.
+
+    Não grava nada: quem decide se é a mesma peça é a pessoa, olhando. Casar
+    peça errada foi o pior erro que este projeto já cometeu (v0.4.0, quando um
+    corpo distribuidor virou um livro), e a lição foi que informação de risco
+    não substitui trava.
+    """
+    from app import extrator
+
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    try:
+        dados = await extrator.extrair(url)
+    except extrator.ExtratorError as exc:
+        return {"ok": False, "mensagem": str(exc)}
+
+    if not dados.util:
+        return {"ok": False, "mensagem": (
+            f"Consegui abrir {dados.dominio}, mas não achei ficha de produto "
+            "nessa página. Confira se o link é da página da peça, e não de uma "
+            "lista de resultados.")}
+
+    return {"ok": True, "dados": dados, "item": linha,
+            "confere_codigo": _codigo_confere(linha["sku"] or "", dados)}
+
+
+def _codigo_confere(codigo_erp: str, dados) -> bool:
+    """O código da planilha aparece nos códigos do site?
+
+    Serve para a tela dizer se é a mesma peça ou se a pessoa precisa olhar com
+    cuidado — não para decidir sozinho.
+    """
+    from app.loja import normalizar_codigo
+
+    alvo = normalizar_codigo(codigo_erp)
+    if len(alvo) < 5:
+        return False
+    achados = [normalizar_codigo(c) for c in dados.codigos]
+    if alvo in achados:
+        return True
+    return alvo in normalizar_codigo(dados.nome)
+
+
+def usar_ficha_da_pesquisa(item_id: int, dados) -> dict:
+    """Deixa a peça pronta para anunciar com a ficha e as fotos do site lido.
+
+    Só chega aqui quando o domínio está em FONTES_IMAGEM_AUTORIZADAS, ou seja,
+    quando a Águia declarou ter direito sobre aquele material. O domínio fica
+    gravado em `fonte_dados`: se um dia chegar reclamação sobre a imagem de
+    algum anúncio, dá para responder de onde veio, em vez de adivinhar.
+
+    O texto do anúncio continua sendo montado por nós a partir dos dados da
+    peça — descrição de site alheio é obra dele, e o direito de usar a imagem
+    do produto não é o mesmo que o de copiar o texto de vendas.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+    if not dados.fotos:
+        return {"ok": False, "mensagem": (
+            f"{dados.dominio} não está na lista de fontes autorizadas, então "
+            "as fotos dele não podem ser usadas. Autorize o domínio em "
+            "FONTES_IMAGEM_AUTORIZADAS se a Águia tem direito sobre esse "
+            "material.")}
+
+    aplicar_dados_da_pesquisa(item_id, dados)
+    storage.atualizar_dados_catalogo(
+        item_id,
+        status=DA_LOJA,                      # mesmo caminho de publicação
+        loja_url=dados.url,
+        loja_nome=(dados.nome or linha["descricao_erp"] or "")[:200],
+        loja_fotos=json.dumps(dados.fotos[:10], ensure_ascii=False),
+        loja_descricao=None,                 # descrição do site NÃO vai junto
+        fonte_dados=dados.dominio,
+        decidido_em=datetime.now(timezone.utc).isoformat(),
+    )
+    return {"ok": True, "fotos": len(dados.fotos[:10]),
+            "mensagem": (f"Peça pronta para anunciar com {len(dados.fotos[:10])} "
+                         f"foto(s) de {dados.dominio}.")}
+
+
+def aplicar_dados_da_pesquisa(item_id: int, dados) -> dict:
+    """Guarda no item os FATOS técnicos trazidos do site.
+
+    Fato técnico — em que veículo aplica, qual o código equivalente, qual a
+    marca — não tem dono: é a realidade da peça. O que fica de fora é o texto
+    descritivo e a foto do site alheio.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    campos: dict = {}
+    if dados.aplicacao and not (linha["aplicacao"] or "").strip():
+        campos["aplicacao"] = dados.aplicacao[:300]
+    if dados.marca and (linha["marca"] or "").strip().upper() in \
+            ("", "OUTRAS MARCAS", "DIVERSOS", "SEM MARCA", "GERAL"):
+        campos["marca"] = dados.marca
+
+    if campos:
+        with storage.conexao() as conn:
+            sets = ", ".join(f"{k} = ?" for k in campos)
+            conn.execute(f"UPDATE itens SET {sets}, atualizado_em = ? WHERE id = ?",
+                         (*campos.values(),
+                          datetime.now(timezone.utc).isoformat(), item_id))
+
+    return {"ok": True, "campos": campos,
+            "mensagem": ("Dados aproveitados: " + ", ".join(campos)
+                         if campos else
+                         "Nada novo — a peça já tinha esses dados preenchidos.")}

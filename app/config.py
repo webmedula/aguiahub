@@ -26,6 +26,10 @@ class Settings:
     # Ficam em variável de ambiente para mudar sem tocar no código.
     ml_garantia_tipo: str = os.getenv("ML_GARANTIA_TIPO", "Garantia do vendedor")
     ml_garantia_prazo: str = os.getenv("ML_GARANTIA_PRAZO", "90 dias")
+    # Domínios de onde a Águia declara ter direito de usar as imagens
+    # (fabricante/fornecedor de quem é distribuidora, material licenciado).
+    # VAZIO por padrão: sem declaração, nenhuma foto de terceiro é aproveitada.
+    fontes_imagem_autorizadas: str = os.getenv("FONTES_IMAGEM_AUTORIZADAS", "")
     ml_categorias_raiz: str = os.getenv("ML_CATEGORIAS_RAIZ", "MLB5672")
 
     # Confiança mínima para um item chegar à tela de aprovação.

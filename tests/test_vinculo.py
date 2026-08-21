@@ -107,3 +107,42 @@ def test_link_de_anuncio_puro_continua_sendo_anuncio():
 
 def test_sem_referencia_devolve_lista_vazia():
     assert extrair_referencias("bomba de arla") == []
+
+
+# ---------------------------------------------------------------------------
+# Beco sem saída do Mercado Livre (v0.19.0)
+# ---------------------------------------------------------------------------
+
+def test_erro_do_ml_nao_manda_procurar_pagina_do_produto():
+    """Relato do João: 'não adianta essa mensagem, não sei como achar essa
+    suposta página do produto'.
+
+    A mensagem antiga mandava caçar um endereço com /p/ ou /up/. Esse
+    endereço não resolve nada — o ML fechou os dados de terceiros para
+    aplicações, e em todo o projeto nenhum link do ML trouxe informação.
+    Prometer uma saída que não existe é pior do que dizer que não dá.
+    """
+    from app.ml.catalog import CaminhoDoMLFechado
+    erro = CaminhoDoMLFechado(
+        "O Mercado Livre não libera para aplicações os dados de anúncios e "
+        "produtos de outros vendedores. Não adianta procurar outro link: "
+        "nenhum endereço do ML vai funcionar aqui.")
+    texto = str(erro)
+    assert "/p/" not in texto
+    assert "PÁGINA DO PRODUTO" not in texto
+    assert "não adianta" in texto.lower()
+
+
+def test_caminho_fechado_e_um_erro_proprio():
+    """Tipo próprio para a rota poder mostrar as saídas que funcionam."""
+    from app.ml.catalog import CaminhoDoMLFechado
+    assert issubclass(CaminhoDoMLFechado, ValueError)
+
+
+def test_nenhuma_tela_manda_procurar_link_no_mercado_livre():
+    """A fila não pode mais oferecer 'procurar no ML' como caminho."""
+    from pathlib import Path
+    fila = (Path(__file__).resolve().parent.parent
+            / "app" / "templates" / "fila.html").read_text(encoding="utf-8")
+    assert "lista.mercadolivre.com.br" not in fila
+    assert "<code>/p/</code>" not in fila

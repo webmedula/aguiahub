@@ -9,6 +9,30 @@
 {% endif %}
 
 <div class="card">
+  <h2>Fontes de imagem autorizadas</h2>
+  {% if fontes_imagem %}
+    <p style="margin:0">A Águia declarou ter direito de usar o material destes
+      sites, então a pesquisa aproveita as fotos deles:</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      {% for f in fontes_imagem %}
+      <span class="pill ok" style="font-size:12px;padding:5px 12px">{{ f }}</span>
+      {% endfor %}
+    </div>
+    <p class="fraco" style="font-size:12px;margin-bottom:0">
+      Vale também para subdomínios (cdn.{{ fontes_imagem[0] }}, por exemplo).
+      Ajuste em <code>FONTES_IMAGEM_AUTORIZADAS</code> no EasyPanel.</p>
+  {% else %}
+    <p style="margin:0">Nenhum site autorizado a ceder imagem.</p>
+    <p class="fraco" style="font-size:13px;margin-bottom:0">
+      A pesquisa em sites externos traz ficha técnica, mas não aproveita foto
+      de ninguém. Se a Águia é distribuidora oficial de alguma marca e tem
+      direito de usar o material dela, liste os domínios em
+      <code>FONTES_IMAGEM_AUTORIZADAS</code> no EasyPanel, separados por
+      vírgula.</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Conta do Mercado Livre</h2>
   {% if conta %}
     <p>Conectado como <strong>{{ conta.nickname or conta.user_id }}</strong>
