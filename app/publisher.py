@@ -28,6 +28,7 @@ from app.config import get_settings
 from app.abreviacoes import expandir
 from app.ml.catalog import (CandidatoCatalogo, anuncios_ativos,
                             buscar_no_catalogo, categoria_e_de_autopecas,
+                            categoria_e_folha,
                             enriquecer_candidato, escolher_publicavel,
                             prever_categoria, produto_do_anuncio, publicavel)
 from app.ml.client import MLClient, MLApiError
@@ -637,7 +638,8 @@ async def publicar_da_loja(item_id: int,
         criado = await client.post("/items", payload)
     except MLApiError as exc:
         storage.atualizar_item(item_id, status=ERRO, erro=exc.mensagem_amigavel())
-        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+        return {"ok": False, "mensagem": exc.mensagem_amigavel(),
+                "detalhe": exc.detalhe_tecnico()}
 
     ml_id = criado.get("id")
     storage.atualizar_item(item_id, status=PUBLICADO, ml_item_id=ml_id,
@@ -726,7 +728,8 @@ async def publicar_com_fotos_proprias(item_id: int,
         criado = await client.post("/items", payload)
     except MLApiError as exc:
         storage.atualizar_item(item_id, status=ERRO, erro=exc.mensagem_amigavel())
-        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+        return {"ok": False, "mensagem": exc.mensagem_amigavel(),
+                "detalhe": exc.detalhe_tecnico()}
 
     ml_id = criado.get("id")
     storage.atualizar_item(item_id, status=PUBLICADO, ml_item_id=ml_id,
@@ -829,7 +832,8 @@ async def _publicar_por_catalogo(client: MLClient, linha,
     except MLApiError as exc:
         storage.atualizar_item(linha["id"], status=ERRO,
                                erro=exc.mensagem_amigavel())
-        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+        return {"ok": False, "mensagem": exc.mensagem_amigavel(),
+                "detalhe": exc.detalhe_tecnico()}
 
     ml_id = criado.get("id")
     storage.atualizar_item(linha["id"], status=PUBLICADO, ml_item_id=ml_id,
@@ -837,3 +841,98 @@ async def _publicar_por_catalogo(client: MLClient, linha,
     return {"ok": True, "ml_item_id": ml_id,
             "permalink": criado.get("permalink"),
             "mensagem": f"Anúncio {ml_id} publicado."}
+
+
+async def montar_payload_do_item(item_id: int,
+                                 listing_type_id: str = "gold_special") -> dict:
+    """Monta o payload EXATO que a publicação enviaria, sem enviar nada.
+
+    Existe para a tela "testar sem publicar". Precisa espelhar fielmente o que
+    `publicar_da_loja` / `publicar_com_fotos_proprias` / `_publicar_por_catalogo`
+    montam — um teste que valida um payload diferente do publicado não serve
+    para nada.
+    """
+    from app import fotos as mod_fotos
+
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    p = LinhaProduto(
+        aba="", linha=linha["linha"], codigo=linha["sku"] or "",
+        descricao=linha["descricao_erp"] or "",
+        quantidade=int(linha["quantidade"] or 1),
+        marca=linha["marca"] or "",
+    )
+    status = linha["status"]
+    client = MLClient()
+
+    if status == AGUARDANDO:
+        if not linha["catalog_category_id"]:
+            return {"ok": False, "mensagem": "Sem categoria de catálogo."}
+        return {"ok": True, "caminho": "catálogo do Mercado Livre",
+                "payload": montar_payload(
+                    p, float(linha["preco"] or 0),
+                    catalog_product_id=linha["catalog_product_id"],
+                    category_id=linha["catalog_category_id"],
+                    listing_type_id=listing_type_id)}
+
+    titulo = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+    categoria = linha["catalog_category_id"]
+    if not categoria:
+        categoria = await prever_categoria(client, titulo)
+    if not categoria:
+        return {"ok": False, "mensagem": (
+            f"Não consegui determinar a categoria do ML para '{titulo}'.")}
+
+    if status == DA_LOJA:
+        fotos_do_item = json.loads(linha["loja_fotos"] or "[]")
+        imagens = [{"source": url} for url in fotos_do_item[:10]]
+        caminho = "foto da loja da Águia"
+    elif status == COM_FOTO_PROPRIA:
+        # No teste não subimos as imagens ao ML — ficaria imagem órfã na conta
+        # a cada clique. Marcamos quantas seriam enviadas.
+        arquivos = mod_fotos.listar(item_id)
+        imagens = [{"source": f"(foto {i + 1} enviada na hora da publicação)"}
+                   for i in range(len(arquivos))]
+        caminho = "foto tirada no estoque"
+    else:
+        return {"ok": False,
+                "mensagem": f"Peça está como '{status}' — não está pronta."}
+
+    payload = {
+        "site_id": get_settings().ml_site_id,
+        "title": titulo,
+        "category_id": categoria,
+        "price": float(linha["preco"] or 0),
+        "currency_id": "BRL",
+        "available_quantity": max(1, int(linha["quantidade"] or 1)),
+        "buying_mode": "buy_it_now",
+        "condition": "new",
+        "listing_type_id": listing_type_id,
+        "pictures": imagens,
+        "attributes": _atributos(p),
+    }
+    aplicar_user_product(payload, titulo)
+    return {"ok": True, "caminho": caminho, "payload": payload}
+
+
+async def testar_item(item_id: int,
+                      listing_type_id: str = "gold_special") -> dict:
+    """Monta o payload e pergunta ao Mercado Livre se ele aceita — sem publicar."""
+    montado = await montar_payload_do_item(item_id, listing_type_id)
+    if not montado.get("ok"):
+        return {**montado, "validacao": None}
+
+    client = MLClient()
+    categoria = montado["payload"].get("category_id", "")
+    folha, motivo = await categoria_e_folha(client, categoria)
+    if not folha:
+        # O ML recusa categoria de meio de árvore com o genérico
+        # 'body.invalid_fields'. Dizer isso antes poupa uma rodada de adivinhação.
+        return {**montado, "validacao": {
+            "disponivel": True, "ok": False, "status": 400,
+            "problemas": [motivo], "corpo": None}}
+
+    validacao = await client.validar_item(montado["payload"])
+    return {**montado, "validacao": validacao}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block titulo %}Testar sem publicar{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Teste sem publicar</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ (item['loja_nome'] or item['titulo'] or item['descricao_erp'])[:80] }}
+      · <span style="font-family:ui-monospace,monospace">{{ item['sku'] }}</span>
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/lotes/{{ item['lote_id'] }}/prontas">Voltar</a>
+</div>
+
+{% if not resultado.ok %}
+<div class="card" style="border-color:rgba(208,69,63,.5)">
+  <h2>Não deu para montar o anúncio</h2>
+  <p class="fraco" style="margin:0">{{ resultado.mensagem }}</p>
+</div>
+{% else %}
+
+{% set v = resultado.validacao %}
+<div class="card" style="border-color:{{
+     'rgba(46,163,107,.5)' if v and v.ok else
+     'rgba(200,146,42,.5)' if v and not v.disponivel else
+     'rgba(208,69,63,.5)' }}">
+  {% if v and v.ok %}
+    <h2>O Mercado Livre aceitou o anúncio</h2>
+    <p class="fraco" style="margin:0">Nada foi publicado — foi só a validação.
+      Pode publicar esta peça pela tela de prontas.</p>
+  {% elif v and not v.disponivel %}
+    <h2>Não deu para validar</h2>
+    <ul class="fraco" style="margin:0">
+      {% for p in v.problemas %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+    <p class="fraco">Sem o validador, o jeito é publicar e ler o erro.</p>
+  {% else %}
+    <h2>O Mercado Livre recusaria este anúncio</h2>
+    <ul style="margin:0 0 10px">
+      {% for p in v.problemas %}<li>{{ p }}</li>{% endfor %}
+    </ul>
+    <p class="fraco" style="margin:0;font-size:13px">Nada foi publicado.
+      Copie o bloco abaixo e mande para o João — é o que diz exatamente qual
+      campo o ML recusou.</p>
+  {% endif %}
+</div>
+
+{% if v and v.corpo %}
+<div class="card">
+  <h2>Resposta crua do Mercado Livre</h2>
+  <pre style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
+       padding:14px;overflow-x:auto;font-size:12px;margin:0"
+  >{{ v.corpo|tojson(indent=2) }}</pre>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>O que seria enviado <span class="fraco" style="font-weight:400">·
+      caminho: {{ resultado.caminho }}</span></h2>
+  <pre style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
+       padding:14px;overflow-x:auto;font-size:12px;margin:0"
+  >{{ resultado.payload|tojson(indent=2) }}</pre>
+</div>
+
+{% endif %}
+
+{% endblock %}

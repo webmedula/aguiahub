@@ -24,7 +24,8 @@ from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            publicar_aprovados, publicar_com_fotos_proprias,
                            publicar_da_loja, publicar_selecionados,
-                           resumir, vincular_por_link, vincular_qualquer,
+                           resumir, testar_item, vincular_por_link,
+                           vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
                         ler_planilha, montar_titulo)
@@ -401,6 +402,21 @@ async def prontas(request: Request, lote_id: int):
         "request": request, "lote_id": lote_id, "itens": itens,
         "valor_total": sum(float(i["valor"] or 0) for i in itens),
         "resultado": None,
+    })
+
+
+@app.get("/itens/{item_id}/testar", response_class=HTMLResponse)
+async def testar(request: Request, item_id: int):
+    """Pergunta ao Mercado Livre se ele aceitaria o anúncio — sem publicar."""
+    linha = storage.item(item_id)
+    if linha is None:
+        raise HTTPException(404, "Peça não encontrada.")
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+
+    resultado = await testar_item(item_id)
+    return templates.TemplateResponse(request, "teste.html", {
+        "request": request, "item": linha, "resultado": resultado,
     })
 
 

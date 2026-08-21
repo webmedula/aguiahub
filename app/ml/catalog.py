@@ -533,3 +533,28 @@ async def escolher_publicavel(
 
         return enriquecido, motivos
     return None, motivos
+
+
+async def categoria_e_folha(client: MLClient, category_id: str) -> tuple[bool, str]:
+    """O Mercado Livre só publica em categoria FOLHA (sem subcategorias).
+
+    Uma categoria de meio de árvore — 'Acessórios para Veículos', por exemplo —
+    é recusada com o genérico `body.invalid_fields`, sem dizer qual campo. Vale
+    conferir antes e falar claro.
+    """
+    if not category_id:
+        return False, "categoria não informada"
+    try:
+        dados = await client.get(f"/categories/{category_id}")
+    except MLApiError as exc:
+        return False, f"não consegui ler a categoria {category_id}: {exc.mensagem_amigavel()}"
+
+    filhas = dados.get("children_categories") or []
+    if filhas:
+        caminho = " > ".join(c.get("name", "")
+                             for c in (dados.get("path_from_root") or []))
+        return False, (
+            f"'{caminho or category_id}' não é uma categoria final do Mercado "
+            f"Livre — ela ainda tem {len(filhas)} subcategoria(s). O ML só "
+            "aceita anúncio na última categoria da árvore.")
+    return True, ""

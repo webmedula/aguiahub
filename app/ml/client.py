@@ -8,6 +8,7 @@ Cuidados embutidos:
 """
 from __future__ import annotations
 
+import json
 import asyncio
 import logging
 from typing import Any
@@ -70,18 +71,52 @@ class MLApiError(RuntimeError):
 
         corpo = self.corpo
         if isinstance(corpo, dict):
-            causas = corpo.get("cause") or []
-            if causas:
-                partes = []
-                for c in causas:
-                    if isinstance(c, dict):
-                        partes.append(c.get("message") or str(c))
-                    else:
-                        partes.append(str(c))
+            partes = self._causas_legiveis(corpo)
+            if partes:
                 return " | ".join(partes)
             if corpo.get("message"):
-                return str(corpo["message"])
+                # 'body.invalid_fields' sozinho não diz nada a ninguém. Se o ML
+                # não detalhou a causa, devolvemos o corpo inteiro — feio, mas
+                # é a única pista de qual campo ele recusou.
+                msg = str(corpo["message"])
+                if msg in _MENSAGENS_VAZIAS:
+                    return f"{msg} — resposta completa do ML: {self.detalhe_tecnico()}"
+                return msg
         return str(corpo)[:400]
+
+    @staticmethod
+    def _causas_legiveis(corpo: dict) -> list[str]:
+        """Extrai as causas do erro do ML.
+
+        Cada causa pode trazer `message`, `code` ou `references` — e nem sempre
+        as três. Ler só `message` fazia a lista voltar vazia e o operador
+        receber 'body.invalid_fields' pelado.
+        """
+        partes: list[str] = []
+        for c in corpo.get("cause") or []:
+            if not isinstance(c, dict):
+                partes.append(str(c))
+                continue
+            texto = c.get("message") or c.get("code") or ""
+            refs = c.get("references") or []
+            if refs:
+                texto = f"{texto} ({', '.join(str(r) for r in refs)})".strip()
+            if texto:
+                partes.append(texto)
+        return partes
+
+    def detalhe_tecnico(self, limite: int = 1500) -> str:
+        """A resposta crua do ML, para colar num relato de problema."""
+        try:
+            texto = json.dumps(self.corpo, ensure_ascii=False)
+        except (TypeError, ValueError):
+            texto = str(self.corpo)
+        return texto[:limite]
+
+
+#: Mensagens do ML que são rótulo de validação, não explicação.
+_MENSAGENS_VAZIAS = {"body.invalid_fields", "validation_error",
+                     "bad_request", "invalid_body"}
 
 
 class MLClient:
@@ -196,6 +231,49 @@ class MLClient:
         if resp.status_code >= 400:
             raise MLApiError(resp.status_code, _corpo(resp), "/pictures/items/upload")
         return (_corpo(resp) or {}).get("id", "")
+
+    async def validar_item(self, payload: dict) -> dict:
+        """Manda o anúncio para o validador do ML SEM publicar.
+
+        O ML valida em cascata: corrige-se um campo, ele reclama do próximo.
+        Descobrir isso publicando de verdade custa um deploy por rodada e
+        arrisca criar anúncio pela metade na conta real. Aqui a resposta vem
+        na hora e nada é criado.
+
+        Devolve sempre um dicionário — nunca levanta erro de validação, porque
+        erro de validação é justamente o que queremos ler.
+        """
+        token = await self.token_valido()
+        url = f"{self._settings.ml_api_base}/items/validate"
+        try:
+            async with httpx.AsyncClient(timeout=45) as client:
+                resp = await client.post(
+                    url, json=payload,
+                    headers={"Authorization": f"Bearer {token}",
+                             "Accept": "application/json"})
+        except httpx.RequestError as exc:
+            return {"disponivel": False, "ok": False, "status": 0,
+                    "problemas": [f"Falha de rede: {exc}"], "corpo": None}
+
+        corpo = _corpo(resp)
+
+        if resp.status_code in (200, 204):
+            return {"disponivel": True, "ok": True, "status": resp.status_code,
+                    "problemas": [], "corpo": corpo}
+
+        if resp.status_code in (404, 405):
+            # Nem toda conta/aplicação tem o validador liberado. Melhor dizer
+            # isso do que fingir que o anúncio está certo.
+            return {"disponivel": False, "ok": False, "status": resp.status_code,
+                    "problemas": ["O Mercado Livre não ofereceu o validador "
+                                  "para esta aplicação."],
+                    "corpo": corpo}
+
+        erro = MLApiError(resp.status_code, corpo, "/items/validate")
+        problemas = MLApiError._causas_legiveis(corpo) if isinstance(corpo, dict) else []
+        return {"disponivel": True, "ok": False, "status": resp.status_code,
+                "problemas": problemas or [erro.mensagem_amigavel()],
+                "corpo": corpo}
 
     async def eu(self) -> dict:
         return await self.get("/users/me")

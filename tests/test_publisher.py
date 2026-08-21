@@ -359,3 +359,102 @@ def test_erro_de_family_name_vira_mensagem_explicativa():
                             "none of the following properties [family_name]"},
                       "/items")
     assert "family_name" in erro.mensagem_amigavel()
+
+
+# ---------------------------------------------------------------------------
+# Diagnóstico de erro do ML (v0.15.0)
+# ---------------------------------------------------------------------------
+
+def test_body_invalid_fields_sozinho_traz_a_resposta_completa():
+    """Relato real: a tela mostrou só 'body.invalid_fields'.
+
+    Esse texto é rótulo de validação, não explicação — não dá para agir sobre
+    ele. Quando o ML não detalha a causa, devolvemos o corpo inteiro.
+    """
+    erro = MLApiError(400, {"message": "body.invalid_fields",
+                            "error": "validation_error", "cause": []}, "/items")
+    msg = erro.mensagem_amigavel()
+    assert "body.invalid_fields" in msg
+    assert "validation_error" in msg          # veio o corpo junto
+
+
+def test_causa_sem_message_usa_o_code_e_as_referencias():
+    """As causas do ML nem sempre têm 'message' — ler só ela dava lista vazia."""
+    erro = MLApiError(400, {"message": "body.invalid_fields",
+                            "cause": [{"code": "item.attributes.missing",
+                                       "references": ["BRAND"]}]}, "/items")
+    msg = erro.mensagem_amigavel()
+    assert "item.attributes.missing" in msg
+    assert "BRAND" in msg
+
+
+def test_detalhe_tecnico_e_json_valido():
+    import json as _json
+    corpo = {"message": "x", "cause": [{"code": "y"}]}
+    erro = MLApiError(400, corpo, "/items")
+    assert _json.loads(erro.detalhe_tecnico()) == corpo
+
+
+def test_detalhe_tecnico_aguenta_corpo_nao_serializavel():
+    erro = MLApiError(500, object(), "/items")
+    assert erro.detalhe_tecnico()             # não levanta
+
+
+def test_categoria_com_subcategorias_e_recusada():
+    """O ML só publica em categoria folha; a de meio de árvore volta como
+    'body.invalid_fields', sem dizer qual campo."""
+    import asyncio
+    from app.ml.catalog import categoria_e_folha
+
+    class Cli:
+        async def get(self, caminho, **kw):
+            return {"id": "MLB1747", "children_categories": [{"id": "MLB1748"}],
+                    "path_from_root": [{"name": "Acessórios para Veículos"}]}
+
+    folha, motivo = asyncio.run(categoria_e_folha(Cli(), "MLB1747"))
+    assert folha is False
+    assert "categoria final" in motivo
+
+
+def test_categoria_folha_e_aceita():
+    import asyncio
+    from app.ml.catalog import categoria_e_folha
+
+    class Cli:
+        async def get(self, caminho, **kw):
+            return {"id": "MLB123456", "children_categories": []}
+
+    folha, motivo = asyncio.run(categoria_e_folha(Cli(), "MLB123456"))
+    assert folha is True and motivo == ""
+
+
+def test_teste_nao_publica_nada(tmp_path, monkeypatch):
+    """A tela de teste não pode criar anúncio — é o ponto dela."""
+    import asyncio
+    from app import publisher
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos",
+                                     catalog_category_id="MLB999",
+                                     loja_nome="PEÇA DE TESTE",
+                                     loja_fotos='["https://x/a.jpg"]')
+    chamadas = []
+
+    class Cli:
+        async def get(self, caminho, **kw):
+            chamadas.append(("GET", caminho))
+            return {"children_categories": []}
+
+        async def post(self, caminho, json, **kw):
+            chamadas.append(("POST", caminho))
+            raise AssertionError("o teste não pode chamar POST /items")
+
+        async def validar_item(self, payload):
+            chamadas.append(("VALIDATE", "/items/validate"))
+            return {"disponivel": True, "ok": True, "status": 204,
+                    "problemas": [], "corpo": None}
+
+    monkeypatch.setattr(publisher, "MLClient", lambda *a, **k: Cli())
+    r = asyncio.run(publisher.testar_item(ids[0]))
+    assert r["validacao"]["ok"] is True
+    assert ("POST", "/items") not in chamadas
+    assert storage.item(ids[0])["status"] == "pronto_com_fotos"

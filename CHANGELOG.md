@@ -5,6 +5,43 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.15.0 — 21/08/2026
+
+**"body.invalid_fields" não é uma mensagem — é uma porta fechada.**
+
+O módulo da Fiat Toro chegou ao `POST /items` e voltou com isso e nada mais.
+O texto é um rótulo de validação do Mercado Livre, não uma explicação: não dá
+para agir sobre ele. E cada rodada de adivinhação custava um deploy inteiro,
+com risco de criar anúncio pela metade numa conta real.
+
+*Parei de adivinhar e coloquei o ML para responder.*
+
+- **Botão "testar" em cada peça pronta.** Manda o anúncio para o validador do
+  ML (`POST /items/validate`) e mostra a resposta. **Nada é publicado** — tem
+  teste automatizado garantindo que esse caminho nunca chama `POST /items`.
+  Se a aplicação não tiver o validador liberado, a tela diz isso em vez de
+  fingir que está tudo certo.
+- **A tela mostra o payload exato** que seria enviado, campo por campo, e a
+  resposta crua do ML. É o que dá para copiar e mandar para mim.
+- **Categoria folha.** O ML só publica na última categoria da árvore. Uma
+  categoria de meio — 'Acessórios para Veículos' — é recusada exatamente com
+  `body.invalid_fields`, sem dizer qual campo. Agora isso é conferido antes e
+  explicado em português.
+
+*Por que a mensagem veio vazia.* Duas falhas minhas na leitura do erro:
+`mensagem_amigavel()` lia apenas `cause[].message`, e o ML às vezes manda só
+`code` e `references` — a lista voltava vazia e sobrava o rótulo pelado. E
+quando o ML de fato não detalha, eu descartava o corpo em vez de mostrá-lo.
+Agora lê `message`, `code` e `references`, e quando não há causa nenhuma
+devolve a resposta inteira.
+
+- Toda falha de publicação passa a trazer, num "detalhe" recolhível, a
+  resposta crua do Mercado Livre, mais um atalho para testar aquela peça.
+
+Sete testes novos, 108 no total.
+
+---
+
 ## v0.14.0 — 21/08/2026
 
 **Primeira publicação de verdade, e o Mercado Livre mudou o modelo.**

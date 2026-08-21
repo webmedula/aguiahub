@@ -39,6 +39,17 @@
         {% else %}
           <span class="pill erro">falhou</span>
           <div class="fraco" style="font-size:12px;margin-top:4px">{{ r.mensagem }}</div>
+          {% if r.detalhe %}
+          <details style="margin-top:6px">
+            <summary class="fraco" style="font-size:11px;cursor:pointer"
+              >resposta crua do Mercado Livre</summary>
+            <pre style="background:#11141a;border:1px solid var(--linha);
+                 border-radius:6px;padding:10px;overflow-x:auto;font-size:11px;
+                 margin:6px 0 0">{{ r.detalhe }}</pre>
+          </details>
+          {% endif %}
+          <a href="/itens/{{ r.item_id }}/testar" style="font-size:11px"
+             >testar sem publicar</a>
         {% endif %}
       </td>
     </tr>
@@ -74,6 +85,7 @@
       <th>Origem da foto</th>
       <th class="num">Preço</th>
       <th class="num">Qtd</th>
+      <th></th>
     </tr>
     {% for it in itens %}
     {% set fotos = it['loja_fotos']|fromjson %}
@@ -112,6 +124,8 @@
       </td>
       <td class="num">R$ {{ '%.2f'|format(it['preco'] or 0) }}</td>
       <td class="num">{{ it['quantidade'] or 1 }}</td>
+      <td><a href="/itens/{{ it['id'] }}/testar" style="font-size:12px"
+             >testar</a></td>
     </tr>
     {% endfor %}
   </table>
