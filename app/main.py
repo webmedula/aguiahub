@@ -42,6 +42,9 @@ templates = Jinja2Templates(directory=str(BASE / "templates"))
 templates.env.globals["VERSAO"] = VERSAO
 # usado pelo cabeçalho para avisar, em QUALQUER tela, que falta conectar
 templates.env.globals["conta_conectada"] = lambda: bool(storage.carregar_token())
+# avisa em qualquer tela se o banco NÃO está num volume — sem isso o deploy
+# apaga silenciosamente as decisões já tomadas na fila
+templates.env.globals["persistencia"] = storage.diagnostico_persistencia
 templates.env.filters["fromjson"] = lambda t: __import__("json").loads(t or "[]")
 
 

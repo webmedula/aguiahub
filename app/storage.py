@@ -77,6 +77,7 @@ _MIGRACOES = {
         "qualidade_codigo":   "TEXT",
         "aplicacao":          "TEXT",
         "decidido_em":        "TEXT",
+        "adiado_vezes":       "INTEGER DEFAULT 0",
         "loja_url":           "TEXT",
         "loja_nome":          "TEXT",
         "loja_sku":           "TEXT",
@@ -240,10 +241,18 @@ def registrar_item(lote_id: int, linha: int, sku: str | None, titulo: str | None
 
 
 def adiar_item(item_id: int) -> None:
-    """Manda o item para o fim da fila sem perder o valor original."""
+    """Manda o item para o fim da fila sem perder o valor original.
+
+    Conta quantas vezes já foi pulado: uma peça pulada três vezes é sinal de
+    que falta informação, não de que o operador está enrolando.
+    """
     with conexao() as conn:
         conn.execute(
-            "UPDATE itens SET valor = -ABS(valor), atualizado_em = ? WHERE id = ?",
+            """UPDATE itens
+               SET valor = -ABS(valor),
+                   adiado_vezes = COALESCE(adiado_vezes, 0) + 1,
+                   atualizado_em = ?
+               WHERE id = ?""",
             (datetime.now(timezone.utc).isoformat(), item_id))
 
 
@@ -266,14 +275,58 @@ def proximo_da_fila(lote_id: int, status: str = "na_fila") -> sqlite3.Row | None
         ).fetchone()
 
 
+#: Status que significam "esta peça ainda não foi trabalhada".
+#: Tudo o que NÃO está aqui conta como decidido. Foi assim que o contador
+#: quebrou na v0.11.0: a tela somava uma lista fixa de status ('vinculado',
+#: que nem existe) e, a cada status novo que eu criava, o número parava mais.
+PENDENTES = ("na_fila",)
+
+
+def _carimbar_decisao(conn, item_id: int, status: str, quando: str) -> None:
+    """Grava a hora da decisão na primeira vez que o item sai de 'na_fila'.
+
+    Fica aqui, num lugar só, em vez de em cada rota: era fácil demais eu
+    esquecer de carimbar num caminho novo e o histórico ficar furado.
+    """
+    if status in PENDENTES:
+        return
+    conn.execute(
+        "UPDATE itens SET decidido_em = ? WHERE id = ? AND decidido_em IS NULL",
+        (quando, item_id))
+
+
 def progresso_da_fila(lote_id: int) -> dict:
+    """Conta o andamento do lote, por status e no total.
+
+    Devolve, além do detalhamento por status, as chaves ``_total``,
+    ``_feitos``, ``_faltam`` e ``_adiados`` — que é o que a tela mostra.
+    """
     with conexao() as conn:
         linhas = conn.execute(
             """SELECT status, COUNT(*) n, COALESCE(SUM(valor),0) v
                FROM itens WHERE lote_id = ? GROUP BY status""",
             (lote_id,),
         ).fetchall()
-    return {r["status"]: {"itens": r["n"], "valor": r["v"]} for r in linhas}
+        adiados = conn.execute(
+            """SELECT COUNT(*) n FROM itens
+               WHERE lote_id = ? AND status = 'na_fila' AND valor < 0""",
+            (lote_id,),
+        ).fetchone()["n"]
+        ultima = conn.execute(
+            """SELECT MAX(decidido_em) d FROM itens WHERE lote_id = ?""",
+            (lote_id,),
+        ).fetchone()["d"]
+
+    resumo = {r["status"]: {"itens": r["n"], "valor": r["v"]} for r in linhas}
+    total = sum(v["itens"] for v in resumo.values())
+    faltam = sum(resumo.get(s, {}).get("itens", 0) for s in PENDENTES)
+
+    resumo["_total"] = total
+    resumo["_feitos"] = total - faltam
+    resumo["_faltam"] = faltam
+    resumo["_adiados"] = adiados
+    resumo["_ultima_decisao"] = ultima
+    return resumo
 
 
 def atualizar_dados_catalogo(item_id: int, **campos) -> None:
@@ -286,11 +339,14 @@ def atualizar_dados_catalogo(item_id: int, **campos) -> None:
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
         return
-    campos["atualizado_em"] = datetime.now(timezone.utc).isoformat()
+    agora = datetime.now(timezone.utc).isoformat()
+    campos["atualizado_em"] = agora
     sets = ", ".join(f"{k} = ?" for k in campos)
     with conexao() as conn:
         conn.execute(f"UPDATE itens SET {sets} WHERE id = ?",
                      (*campos.values(), item_id))
+        if campos.get("status"):
+            _carimbar_decisao(conn, item_id, campos["status"], agora)
 
 
 def item(item_id: int) -> sqlite3.Row | None:
@@ -327,14 +383,15 @@ def itens_aprovados(lote_id: int) -> list[sqlite3.Row]:
 
 def atualizar_item(item_id: int, *, status: str, ml_item_id: str | None = None,
                    permalink: str | None = None, erro: str | None = None) -> None:
+    agora = datetime.now(timezone.utc).isoformat()
     with conexao() as conn:
         conn.execute(
             """UPDATE itens
                SET status = ?, ml_item_id = ?, permalink = ?, erro = ?, atualizado_em = ?
                WHERE id = ?""",
-            (status, ml_item_id, permalink, erro,
-             datetime.now(timezone.utc).isoformat(), item_id),
+            (status, ml_item_id, permalink, erro, agora, item_id),
         )
+        _carimbar_decisao(conn, item_id, status, agora)
 
 
 def itens_do_lote(lote_id: int) -> list[sqlite3.Row]:
@@ -371,3 +428,39 @@ def sku_ja_publicado(sku: str) -> str | None:
             (sku,),
         ).fetchone()
     return row["ml_item_id"] if row else None
+
+
+def diagnostico_persistencia() -> dict:
+    """Diz se o banco está num volume que sobrevive ao deploy.
+
+    O trabalho do operador — 1.333 decisões — vive nesse arquivo. Se a pasta
+    ``data/`` não for um volume montado, o EasyPanel joga tudo fora no próximo
+    deploy e a fila recomeça do zero. Já perdemos o token do Mercado Livre
+    assim uma vez; melhor a tela avisar do que descobrir depois.
+    """
+    caminho = Path(_caminho_db())
+    pasta = caminho.parent
+    montado = False
+    try:
+        montado = os.path.ismount(str(pasta))
+    except OSError:
+        pass
+
+    decididas = 0
+    if caminho.exists():
+        try:
+            with conexao() as conn:
+                decididas = conn.execute(
+                    "SELECT COUNT(*) n FROM itens WHERE decidido_em IS NOT NULL"
+                ).fetchone()["n"]
+        except sqlite3.Error:
+            pass
+
+    return {
+        "caminho": str(caminho),
+        "pasta": str(pasta),
+        "volume_montado": montado,
+        "existe": caminho.exists(),
+        "tamanho_bytes": caminho.stat().st_size if caminho.exists() else 0,
+        "decisoes_gravadas": decididas,
+    }

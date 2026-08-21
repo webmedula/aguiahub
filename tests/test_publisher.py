@@ -127,3 +127,94 @@ def test_causas_do_ml_sao_concatenadas():
                                       {"message": "campo B inválido"}]}, "/items")
     msg = erro.mensagem_amigavel()
     assert "campo A inválido" in msg and "campo B inválido" in msg
+
+
+# ---------------------------------------------------------------------------
+# Contagem do progresso (v0.12.0)
+# ---------------------------------------------------------------------------
+
+def _lote_de_teste(tmp_path, monkeypatch):
+    """Aponta o banco para uma pasta temporária.
+
+    Cuidado: `Settings` lê os `os.getenv` na definição da classe, ou seja, uma
+    única vez, quando o módulo é importado. Mexer em `os.environ` depois disso
+    não muda nada — foi assim que estes testes escreveram no banco de
+    desenvolvimento sem ninguém perceber. Por isso trocamos o atributo do
+    objeto já construído, e não a variável de ambiente.
+    """
+    import app.config as cfg
+    s = cfg.get_settings()
+    monkeypatch.setattr(s, "database_url", f"sqlite:///{tmp_path}/t.db")
+    monkeypatch.setattr(s, "data_dir", str(tmp_path))
+    from app import storage
+    storage.init_db()
+    lote_id = storage.criar_lote("x.xls", 5, True, {})
+    ids = []
+    for i in range(5):
+        ids.append(storage.registrar_item(
+            lote_id, i, f"COD{i}0000", f"peca {i}", {},
+            status="na_fila", valor=100.0 * (i + 1)))
+    return storage, lote_id, ids
+
+
+def test_contador_soma_qualquer_status_que_nao_seja_na_fila(tmp_path, monkeypatch):
+    """O bug da v0.11.0: a tela somava uma lista fixa de status.
+
+    'pronto_com_fotos' e 'foto_do_operador' não estavam na lista, então
+    decidir uma peça não mexia no contador.
+    """
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    assert storage.progresso_da_fila(lote_id)["_feitos"] == 0
+
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    storage.atualizar_dados_catalogo(ids[1], status="foto_do_operador")
+    storage.atualizar_item(ids[2], status="publicado")
+
+    p = storage.progresso_da_fila(lote_id)
+    assert p["_feitos"] == 3
+    assert p["_faltam"] == 2
+    assert p["_total"] == 5
+
+
+def test_decisao_fica_carimbada_com_a_hora(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    assert storage.item(ids[0])["decidido_em"]
+    assert storage.progresso_da_fila(lote_id)["_ultima_decisao"]
+
+
+def test_carimbo_nao_e_reescrito_por_atualizacao_posterior(tmp_path, monkeypatch):
+    """A hora guardada é a da PRIMEIRA decisão, não a do último toque."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    primeira = storage.item(ids[0])["decidido_em"]
+    storage.atualizar_item(ids[0], status="publicado")
+    assert storage.item(ids[0])["decidido_em"] == primeira
+
+
+def test_pular_nao_conta_como_decidida_mas_fica_registrado(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.adiar_item(ids[4])
+    p = storage.progresso_da_fila(lote_id)
+    assert p["_feitos"] == 0
+    assert p["_adiados"] == 1
+    assert storage.item(ids[4])["adiado_vezes"] == 1
+    storage.adiar_item(ids[4])
+    assert storage.item(ids[4])["adiado_vezes"] == 2
+
+
+def test_fila_retoma_de_onde_parou(tmp_path, monkeypatch):
+    """Fechar e voltar tem que continuar na mesma peça."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    primeiro = storage.proximo_da_fila(lote_id)
+    assert primeiro["id"] == ids[4]                     # maior valor
+    storage.atualizar_dados_catalogo(ids[4], status="pronto_com_fotos")
+    assert storage.proximo_da_fila(lote_id)["id"] == ids[3]
+
+
+def test_diagnostico_de_persistencia_conta_decisoes(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    d = storage.diagnostico_persistencia()
+    assert d["existe"] is True
+    assert d["decisoes_gravadas"] == 1

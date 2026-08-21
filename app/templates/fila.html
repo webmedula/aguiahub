@@ -2,27 +2,59 @@
 {% block titulo %}Fila de trabalho{% endblock %}
 {% block conteudo %}
 
-{% set feitos = (progresso.get('vinculado',{}).get('itens',0)
-               + progresso.get('publicado',{}).get('itens',0)
-               + progresso.get('nao_encontrado',{}).get('itens',0)
-               + progresso.get('em_duvida',{}).get('itens',0)) %}
-{% set faltam = progresso.get('na_fila',{}).get('itens',0) %}
+{% set feitos = progresso.get('_feitos', 0) %}
+{% set faltam = progresso.get('_faltam', 0) %}
+{% set total  = progresso.get('_total', 0) %}
 
-<div class="card" style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-  <div>
-    <div style="font-size:13px;color:var(--fraco)">Peças já decididas</div>
-    <div style="font-size:26px;font-weight:600">{{ feitos }}<span
-      class="fraco" style="font-size:16px"> de {{ feitos + faltam }}</span></div>
-  </div>
-  <div style="flex:1;min-width:200px">
-    <div style="height:10px;background:#11141a;border-radius:6px;overflow:hidden">
-      <div style="height:100%;background:var(--ok);
-        width:{{ (feitos / (feitos + faltam) * 100) if (feitos + faltam) else 0 }}%"></div>
+{% set rotulos = {
+  'pronto_com_fotos':     'prontas com foto da loja',
+  'foto_do_operador':     'com foto tirada aqui',
+  'aguardando_aprovacao': 'ligadas ao catálogo do ML',
+  'publicado':            'publicadas no ML',
+  'nao_encontrado':       'não achei',
+  'em_duvida':            'separadas para o João',
+  'sem_catalogo':         'sem catálogo no ML',
+  'catalogo_inativo':     'catálogo inativo',
+  'sugestao_duvidosa':    'sugestão duvidosa',
+  'sem_categoria':        'sem categoria',
+  'ignorado':             'ignoradas',
+  'erro':                 'com erro',
+} %}
+
+<div class="card">
+  <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+    <div>
+      <div style="font-size:13px;color:var(--fraco)">Peças já decididas</div>
+      <div style="font-size:26px;font-weight:600">{{ feitos }}<span
+        class="fraco" style="font-size:16px"> de {{ total }}</span></div>
+    </div>
+    <div style="flex:1;min-width:200px">
+      <div style="height:10px;background:#11141a;border-radius:6px;overflow:hidden">
+        <div style="height:100%;background:var(--ok);transition:width .3s;
+          width:{{ (feitos / total * 100) if total else 0 }}%"></div>
+      </div>
+      <div class="fraco" style="font-size:12px;margin-top:6px">
+        Faltam {{ faltam }}.
+        {% if progresso.get('_adiados') %}
+          {{ progresso['_adiados'] }} delas já foram puladas antes.
+        {% endif %}
+        O progresso fica gravado — pode fechar e voltar depois que a fila
+        continua de onde parou.
+      </div>
     </div>
   </div>
-  {% if progresso.get('em_duvida') %}
-  <div class="fraco" style="font-size:13px">
-    {{ progresso['em_duvida']['itens'] }} separada(s) para o João revisar
+
+  {% if feitos %}
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid #232833;
+              display:flex;gap:8px;flex-wrap:wrap">
+    {% for chave, rotulo in rotulos.items() %}
+      {% if progresso.get(chave, {}).get('itens') %}
+      <span style="font-size:12px;background:#11141a;border:1px solid #232833;
+                   border-radius:20px;padding:5px 12px">
+        <strong>{{ progresso[chave]['itens'] }}</strong> {{ rotulo }}
+      </span>
+      {% endif %}
+    {% endfor %}
   </div>
   {% endif %}
 </div>

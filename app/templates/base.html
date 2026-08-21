@@ -68,6 +68,17 @@
      href="/oauth/mercadolivre/login">Conectar agora</a>
 </div>
 {% endif %}
+{% set persist = persistencia() %}
+{% if not persist.volume_montado %}
+<div class="aviso" style="border-color:rgba(216,160,50,.45);
+     background:rgba(216,160,50,.1)">
+  <strong>Atenção: o trabalho pode se perder no próximo deploy.</strong>
+  <span class="fraco">A pasta <code>{{ persist.pasta }}</code> não é um
+  volume montado — do jeito que está, o EasyPanel apaga o banco a cada
+  atualização e a fila volta ao zero. No EasyPanel, em
+  <em>Mounts → Add Volume</em>, monte um volume em <code>/app/data</code>.</span>
+</div>
+{% endif %}
 {% block conteudo %}{% endblock %}</main>
 </body>
 </html>

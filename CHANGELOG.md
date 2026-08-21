@@ -5,6 +5,48 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.12.0 — 21/08/2026
+
+**O contador não andava, e o trabalho corria risco de sumir.**
+
+Duas coisas, a partir da tela que o João mandou com "0 de 1333" depois de já
+ter decidido peças.
+
+*O contador.* A tela somava uma lista fixa de status para saber o que já
+tinha sido feito — e nessa lista estava `vinculado`, que não existe em lugar
+nenhum do sistema. Os status que o operador realmente produz
+(`pronto_com_fotos`, `foto_do_operador`, `aguardando_aprovacao`) ficaram de
+fora. Ou seja: decidir peça nunca mexeu no número. Agora a conta é ao
+contrário — pendente é só `na_fila`, todo o resto conta como decidido. Não
+quebra de novo quando eu criar um status novo.
+
+*A memória.* O andamento sempre esteve gravado no SQLite, mas com dois
+furos:
+
+- `decidido_em` só era carimbado na rota de decisão manual. Quem vinculava
+  pela loja ou publicava com foto própria não deixava registro de quando.
+  Passou a ser carimbado num lugar só, dentro do `storage`, na primeira vez
+  que a peça sai da fila — e nunca é reescrito depois.
+- Se a pasta `data/` não for um volume montado no EasyPanel, o deploy apaga
+  o banco e as 1.333 decisões voltam ao zero. O sistema agora **verifica isso
+  e avisa em faixa amarela no topo de todas as telas**. Enquanto a faixa
+  estiver aparecendo, o trabalho não está seguro.
+
+Também: peça pulada agora conta quantas vezes foi pulada (`adiado_vezes`) —
+três vezes é sinal de que falta informação, não de enrolação —, e a tela
+mostra um resumo do que já foi decidido, separado por tipo.
+
+*Erro nos testes.* Descobri, corrigindo isso, que os testes escreviam no
+banco de desenvolvimento em vez de numa pasta temporária. `Settings` lê os
+`os.getenv` na definição da classe, uma vez só, no import — então mexer em
+`os.environ` dentro do teste não mudava nada. Não afeta produção, onde as
+variáveis já existem antes do processo subir, mas afetava a confiança nos
+testes. Corrigido.
+
+Seis testes novos, 88 no total.
+
+---
+
 ## v0.11.0 — 20/08/2026
 
 **O código estava na loja o tempo todo — só escrito de outro jeito.**
