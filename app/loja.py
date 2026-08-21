@@ -18,6 +18,7 @@ from __future__ import annotations
 import html
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
@@ -336,3 +337,51 @@ def indexar(produtos: list[ProdutoDaLoja]) -> dict[str, ProdutoDaLoja]:
 def casar(codigo: str, indice: dict[str, ProdutoDaLoja]) -> ProdutoDaLoja | None:
     chave = normalizar_codigo(codigo)
     return indice.get(chave) if len(chave) >= 5 else None
+
+
+async def baixar_foto(url: str, tamanho_maximo: int = 10 * 1024 * 1024) -> bytes:
+    """Baixa uma imagem da loja da Águia.
+
+    Serve para subir a foto ao Mercado Livre pelo endpoint oficial em vez de
+    passar a URL e torcer para o ML conseguir buscar. O site da Águia fica
+    atrás de firewall que recusa requisição sem cara de navegador — foi o que
+    deixou o primeiro anúncio publicado sem imagem nenhuma.
+    """
+    if not url:
+        raise LojaError("URL da foto vazia.")
+
+    cabecalhos = dict(_CABECALHOS)
+    cabecalhos["Accept"] = "image/avif,image/webp,image/png,image/jpeg,*/*"
+
+    try:
+        async with httpx.AsyncClient(timeout=45, follow_redirects=True,
+                                     headers=cabecalhos) as cli:
+            resp = await cli.get(url)
+    except httpx.RequestError as exc:
+        raise LojaError(f"Não consegui baixar {url}: {exc}") from exc
+
+    if resp.status_code >= 400:
+        raise LojaError(f"A foto {url} respondeu HTTP {resp.status_code}.")
+
+    tipo = resp.headers.get("content-type", "")
+    if not tipo.startswith("image/"):
+        raise LojaError(f"{url} não devolveu imagem (veio {tipo or 'sem tipo'}).")
+
+    if len(resp.content) > tamanho_maximo:
+        raise LojaError(
+            f"A foto {url} tem {len(resp.content) // 1024} KB — acima do "
+            f"limite de {tamanho_maximo // 1024 // 1024} MB do Mercado Livre.")
+
+    if not resp.content:
+        raise LojaError(f"A foto {url} veio vazia.")
+
+    return resp.content
+
+
+def nome_do_arquivo(url: str, indice: int = 0) -> str:
+    """Nome de arquivo para o upload, a partir da URL da foto."""
+    caminho = urlparse(url).path
+    nome = Path(caminho).name if caminho else ""
+    if nome and "." in nome:
+        return nome[:120]
+    return f"foto_{indice + 1}.jpg"

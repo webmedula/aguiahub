@@ -630,7 +630,6 @@ async def publicar_da_loja(item_id: int,
 
     payload = {
         "site_id": get_settings().ml_site_id,
-        "title": titulo,
         "category_id": categoria,
         "price": float(linha["preco"] or 0),
         "currency_id": "BRL",
@@ -638,7 +637,9 @@ async def publicar_da_loja(item_id: int,
         "buying_mode": "buy_it_now",
         "condition": "new",
         "listing_type_id": listing_type_id,
-        # As imagens são da própria Águia; o ML baixa a partir da URL.
+        # As imagens são da própria Águia. O ML baixa a partir da URL e
+        # processa em segundo plano: o anúncio pode aparecer sem foto por
+        # alguns minutos logo depois de criado. Isso é normal — não é erro.
         "pictures": [{"source": url} for url in fotos[:10]],
         "attributes": _atributos(p),
     }
@@ -896,14 +897,17 @@ async def montar_payload_do_item(item_id: int,
             f"Não consegui determinar a categoria do ML para '{titulo}'.")}
 
     if status == DA_LOJA:
+        # No teste não subimos imagem ao ML — ficaria foto órfã na conta a cada
+        # clique. Mostramos quantas seriam enviadas.
         fotos_do_item = json.loads(linha["loja_fotos"] or "[]")
-        imagens = [{"source": url} for url in fotos_do_item[:10]]
+        imagens = [{"id": f"(foto {i + 1} da loja, enviada na publicação)"}
+                   for i in range(len(fotos_do_item[:10]))]
         caminho = "foto da loja da Águia"
     elif status == COM_FOTO_PROPRIA:
         # No teste não subimos as imagens ao ML — ficaria imagem órfã na conta
         # a cada clique. Marcamos quantas seriam enviadas.
         arquivos = mod_fotos.listar(item_id)
-        imagens = [{"source": f"(foto {i + 1} enviada na hora da publicação)"}
+        imagens = [{"id": f"(foto {i + 1} do estoque, enviada na publicação)"}
                    for i in range(len(arquivos))]
         caminho = "foto tirada no estoque"
     else:
@@ -912,7 +916,6 @@ async def montar_payload_do_item(item_id: int,
 
     payload = {
         "site_id": get_settings().ml_site_id,
-        "title": titulo,
         "category_id": categoria,
         "price": float(linha["preco"] or 0),
         "currency_id": "BRL",
@@ -946,3 +949,114 @@ async def testar_item(item_id: int,
 
     validacao = await client.validar_item(montado["payload"])
     return {**montado, "validacao": validacao}
+
+
+async def subir_fotos_da_loja(client: MLClient,
+                              urls: list[str]) -> tuple[list[dict], list[str]]:
+    """Baixa as fotos da loja e SOBE para o Mercado Livre, devolvendo os ids.
+
+    NÃO é o caminho normal de publicação. O caminho normal manda
+    ``pictures: [{"source": url}]`` e o ML busca a imagem no site da Águia —
+    isso funciona; o processamento é assíncrono, então o anúncio aparece sem
+    foto por alguns minutos e depois a imagem entra sozinha. Cheguei a trocar
+    esse caminho achando que o firewall da loja tinha barrado o robô do ML,
+    e estava errado: era só demora.
+
+    Isto aqui existe para o conserto (``corrigir_fotos``), quando um anúncio
+    já publicado continua sem imagem depois da espera. Baixa a foto com
+    cabeçalho de navegador e sobe pelo endpoint oficial
+    ``/pictures/items/upload``, sem depender de o ML alcançar a loja.
+
+    Devolve ``(imagens, avisos)`` — as imagens no formato que o ML espera e
+    o motivo de cada foto que não deu.
+    """
+    from app import loja
+
+    imagens: list[dict] = []
+    avisos: list[str] = []
+
+    for i, url in enumerate(urls):
+        try:
+            conteudo = await loja.baixar_foto(url)
+        except loja.LojaError as exc:
+            avisos.append(str(exc))
+            continue
+        try:
+            foto_id = await client.enviar_foto(conteudo, loja.nome_do_arquivo(url, i))
+        except MLApiError as exc:
+            avisos.append(f"{url}: {exc.mensagem_amigavel()}")
+            continue
+        if foto_id:
+            imagens.append({"id": foto_id})
+
+    return imagens, avisos
+
+
+async def corrigir_fotos(item_id: int) -> dict:
+    """Coloca as fotos num anúncio JÁ publicado que saiu sem imagem.
+
+    Existe porque o primeiro anúncio real foi ao ar vazio. Sem isto, o jeito
+    seria apagar e recriar — perdendo o anúncio, a data e qualquer visita.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        return {"ok": False, "mensagem": "Item não encontrado."}
+
+    ml_id = linha["ml_item_id"]
+    if not ml_id:
+        return {"ok": False, "mensagem": (
+            "Esta peça ainda não foi publicada — não há anúncio para corrigir.")}
+
+    fotos = json.loads(linha["loja_fotos"] or "[]")
+    origem = "loja da Águia"
+    if not fotos:
+        from app import fotos as mod_fotos
+        arquivos = mod_fotos.listar(item_id)
+        if not arquivos:
+            return {"ok": False, "mensagem": (
+                "Não há foto guardada para esta peça — nem da loja, nem tirada "
+                "aqui. Tire uma foto na tela da fila e tente de novo.")}
+        origem = "fotos tiradas no estoque"
+
+    client = MLClient()
+
+    if fotos:
+        imagens, avisos = await subir_fotos_da_loja(client, fotos[:10])
+    else:
+        from app import fotos as mod_fotos
+        imagens, avisos = [], []
+        for nome in mod_fotos.listar(item_id):
+            try:
+                foto_id = await client.enviar_foto(mod_fotos.ler(item_id, nome), nome)
+                if foto_id:
+                    imagens.append({"id": foto_id})
+            except MLApiError as exc:
+                avisos.append(f"{nome}: {exc.mensagem_amigavel()}")
+
+    if not imagens:
+        return {"ok": False,
+                "mensagem": "Nenhuma foto subiu. " + " | ".join(avisos)}
+
+    try:
+        await client.put(f"/items/{ml_id}", {"pictures": imagens})
+    except MLApiError as exc:
+        return {"ok": False, "mensagem": exc.mensagem_amigavel(),
+                "detalhe": exc.detalhe_tecnico()}
+
+    # O ML pausa anúncio sem foto. Com as imagens no lugar, reativa.
+    reativado = False
+    try:
+        await client.put(f"/items/{ml_id}", {"status": "active"})
+        reativado = True
+    except MLApiError as exc:
+        avisos.append(f"não consegui reativar o anúncio: {exc.mensagem_amigavel()}")
+
+    return {
+        "ok": True,
+        "fotos": len(imagens),
+        "reativado": reativado,
+        "avisos": avisos,
+        "mensagem": (f"{len(imagens)} foto(s) enviadas ao anúncio {ml_id} "
+                     f"({origem})."
+                     + (" Anúncio reativado." if reativado else "")),
+    }

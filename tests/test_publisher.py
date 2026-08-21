@@ -616,3 +616,96 @@ def test_nenhuma_tela_pede_a_palavra_publicar():
     for arquivo in pasta.glob("*.html"):
         texto = arquivo.read_text(encoding="utf-8")
         assert 'name="confirmacao"' not in texto, arquivo.name
+
+
+# ---------------------------------------------------------------------------
+# Fotos em anúncio já publicado (v0.18.0)
+# ---------------------------------------------------------------------------
+
+def test_publicacao_da_loja_manda_as_fotos_por_url():
+    """As fotos vão como `source`: o ML busca e processa em segundo plano.
+
+    Cheguei a trocar isso por download+upload achando que o firewall da loja
+    tinha barrado o robô do ML. Estava errado — era só demora no
+    processamento. Este teste tranca o caminho certo.
+    """
+    import inspect
+    from app import publisher
+    fonte = inspect.getsource(publisher.publicar_da_loja)
+    assert '{"source": url}' in fonte
+
+
+def test_corrigir_fotos_recusa_item_que_nao_foi_publicado(tmp_path, monkeypatch):
+    import asyncio
+    from app.publisher import corrigir_fotos
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    r = asyncio.run(corrigir_fotos(ids[0]))
+    assert r["ok"] is False
+    assert "ainda não foi publicada" in r["mensagem"]
+
+
+def test_corrigir_fotos_recusa_quando_nao_ha_foto_nenhuma(tmp_path, monkeypatch):
+    import asyncio
+    from app.publisher import corrigir_fotos
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_item(ids[0], status="publicado", ml_item_id="MLB123")
+    r = asyncio.run(corrigir_fotos(ids[0]))
+    assert r["ok"] is False
+    assert "Não há foto guardada" in r["mensagem"]
+
+
+def test_corrigir_fotos_sobe_e_reativa(tmp_path, monkeypatch):
+    import asyncio
+    from app import publisher, loja
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(
+        ids[0], loja_fotos='["https://loja.aguiadiesel.com.br/a.jpg"]')
+    storage.atualizar_item(ids[0], status="publicado", ml_item_id="MLB123")
+
+    puts = []
+
+    class Cli:
+        async def enviar_foto(self, conteudo, nome):
+            return "MLB-FOTO-1"
+
+        async def put(self, caminho, json, **kw):
+            puts.append((caminho, json))
+            return {}
+
+    async def falso_baixar(url, **kw):
+        return b"\xff\xd8\xff"          # cabeçalho de JPEG
+
+    monkeypatch.setattr(publisher, "MLClient", lambda *a, **k: Cli())
+    monkeypatch.setattr(loja, "baixar_foto", falso_baixar)
+
+    r = asyncio.run(publisher.corrigir_fotos(ids[0]))
+    assert r["ok"] is True and r["fotos"] == 1
+    assert ("/items/MLB123", {"pictures": [{"id": "MLB-FOTO-1"}]}) in puts
+    # o ML pausa anúncio sem foto — com imagem no lugar, reativa
+    assert ("/items/MLB123", {"status": "active"}) in puts
+
+
+def test_baixar_foto_recusa_resposta_que_nao_e_imagem():
+    """A loja atrás de firewall devolve HTML de bloqueio com status 200."""
+    import asyncio, httpx
+    from app import loja
+
+    def responder(request):
+        return httpx.Response(200, text="<html>acesso negado</html>",
+                              headers={"content-type": "text/html"})
+
+    transporte = httpx.MockTransport(responder)
+    original = httpx.AsyncClient
+
+    class Fake(original):
+        def __init__(self, *a, **kw):
+            kw["transport"] = transporte
+            super().__init__(*a, **kw)
+
+    httpx.AsyncClient = Fake
+    try:
+        with __import__("pytest").raises(loja.LojaError) as erro:
+            asyncio.run(loja.baixar_foto("https://loja.aguiadiesel.com.br/a.jpg"))
+        assert "não devolveu imagem" in str(erro.value)
+    finally:
+        httpx.AsyncClient = original

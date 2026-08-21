@@ -23,7 +23,8 @@ from app import loja
 from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            publicar_aprovados, publicar_com_fotos_proprias,
-                           publicar_da_loja, publicar_selecionados,
+                           corrigir_fotos, publicar_da_loja,
+                           publicar_selecionados,
                            resumir, testar_item, vincular_por_link,
                            vincular_qualquer,
                            vincular_produto_da_loja)
@@ -450,6 +451,18 @@ async def reabrir(item_id: int, lote_id: int = Form(...),
     destino = (f"/lotes/{lote_id}/decididas" if volta_para == "decididas"
                else f"/fila/{lote_id}")
     return RedirectResponse(destino, status_code=303)
+
+
+@app.post("/itens/{item_id}/corrigir-fotos")
+async def rota_corrigir_fotos(item_id: int, lote_id: int = Form(...)):
+    """Coloca as fotos num anúncio já publicado que ficou sem imagem."""
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    resultado = await corrigir_fotos(item_id)
+    if not resultado["ok"]:
+        raise HTTPException(400, resultado["mensagem"])
+    return RedirectResponse(f"/lotes/{lote_id}/decididas?status=publicado",
+                            status_code=303)
 
 
 @app.get("/itens/{item_id}/testar", response_class=HTMLResponse)

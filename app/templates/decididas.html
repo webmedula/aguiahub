@@ -93,7 +93,14 @@
       <td class="num">R$ {{ '%.2f'|format(it['valor'] or 0) }}</td>
       <td>
         {% if it['status'] == 'publicado' %}
-          <span class="fraco" style="font-size:11px">já no ML</span>
+          <form method="post" action="/itens/{{ it['id'] }}/corrigir-fotos"
+                onsubmit="return confirm('Reenviar as fotos para este anúncio?')">
+            <input type="hidden" name="lote_id" value="{{ lote_id }}">
+            <button class="secundario" type="submit"
+                    style="font-size:12px;padding:5px 10px">reenviar fotos</button>
+          </form>
+          <div class="fraco" style="font-size:10px;margin-top:4px">
+            só se o anúncio estiver sem imagem</div>
         {% else %}
           <form method="post" action="/itens/{{ it['id'] }}/reabrir"
                 onsubmit="return confirm('Devolver esta peça para a fila?')">

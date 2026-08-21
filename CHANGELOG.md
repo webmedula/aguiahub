@@ -5,6 +5,48 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.18.0 — 21/08/2026
+
+**Primeiro anúncio no ar.**
+
+    https://www.mercadolivre.com.br/modulo-de-injecao--fiat-toro--jeep-renegade
+    --jeep-compass/up/MLBU4863355537
+
+Módulo de injeção Fiat Toro / Jeep Renegade / Jeep Compass, R$ 3.190,94, 15
+unidades. Saiu do `Itens parados.xls` e chegou ao Mercado Livre sem ninguém
+digitar nada.
+
+*O susto das fotos, e o erro que quase cometi.* O anúncio apareceu vazio e
+pausado. Diagnostiquei firewall da loja bloqueando o robô do ML — eu mesmo
+tinha levado 403 do site nos testes — e reescrevi a publicação para baixar
+cada imagem aqui e subir pelo `/pictures/items/upload`.
+
+Estava errado. O João avisou que a foto entrou sozinha minutos depois: o ML
+**busca a imagem em segundo plano**, e o anúncio fica sem foto (e pausado) até
+terminar. Revertido. A publicação continua mandando `pictures: [{"source":
+url}]`, que é o caminho mais barato — não faz o WordPress da Águia servir
+1.334 peças de imagens, nem duplica tráfego.
+
+Fica um teste trancando esse caminho, para eu não "consertar" de novo o que
+não está quebrado.
+
+*O que sobrou de útil do engano:*
+
+- **Botão "reenviar fotos"** nas peças publicadas, na tela de decididas. Baixa
+  a imagem daqui e sobe pelo endpoint oficial, sem depender de o ML alcançar
+  a loja — serve para o anúncio que continuar sem imagem depois da espera.
+  Também reativa o anúncio, já que o ML pausa quem está sem foto.
+- Funciona tanto com foto da loja quanto com foto tirada no estoque.
+- `baixar_foto()` recusa resposta que não é imagem — a loja atrás de firewall
+  devolve HTML de bloqueio com status 200, e subir isso como "foto" daria um
+  erro bem mais confuso lá na frente.
+- A tela de publicação agora avisa que a foto pode demorar alguns minutos, em
+  vez de deixar a pessoa achar que deu errado.
+
+Cinco testes novos, 133 no total.
+
+---
+
 ## v0.17.0 — 21/08/2026
 
 **A terceira camada da validação do ML: o título não vai mais.**
