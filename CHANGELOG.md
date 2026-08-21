@@ -5,6 +5,41 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.14.0 — 21/08/2026
+
+**Primeira publicação de verdade, e o Mercado Livre mudou o modelo.**
+
+O injetor A2C59517051 foi a primeira peça a chegar até o `POST /items`. O ML
+recusou com:
+
+    The body does not contains some or none of the following properties
+    [family_name]
+
+O Mercado Livre migrou os anúncios sem catálogo para o modelo **User
+Product** — os tais `MLBU` que já tinham aparecido antes, quando a busca do
+catálogo só devolvia fichas antigas. Agora, para criar anúncio próprio, é
+preciso mandar ou o `user_product_id` de um produto que já exista na conta,
+ou o **`family_name`**: o nome da família que o ML cria em nome do vendedor.
+É campo de topo, não vai dentro de `attributes`, e respeita o mesmo limite de
+60 caracteres do título.
+
+- `aplicar_user_product()` acrescenta `family_name` nos três caminhos de
+  anúncio próprio (foto da loja, foto do operador, e o payload genérico).
+  Num lugar só — não quero descobrir num quarto caminho que esqueci.
+- **Garantia junto.** É a exigência seguinte da mesma validação, e não faz
+  sentido descobrir isso num segundo deploy. Vai `WARRANTY_TYPE` = *Garantia
+  do vendedor* e `WARRANTY_TIME` = *90 dias*, ajustáveis por
+  `ML_GARANTIA_TIPO` e `ML_GARANTIA_PRAZO` no EasyPanel, sem mexer no código.
+- Publicação **por catálogo** continua sem `family_name` nem garantia — lá a
+  identidade do produto vem do catálogo e mandar os nossos causaria conflito.
+- Se o erro voltar a aparecer, a mensagem na tela agora explica o que é e
+  manda conferir a versão que está rodando, em vez de repetir o texto cru
+  do ML.
+
+Sete testes novos, 101 no total.
+
+---
+
 ## v0.13.0 — 21/08/2026
 
 **"Mostra 353 decididas. Mas como sei quais são e como publicar elas?"**

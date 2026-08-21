@@ -22,6 +22,10 @@ class Settings:
     # Categorias-raiz aceitas. MLB5672 = "Acessórios para Veículos".
     # É o que impede casar um injetor diesel com um livro ou uma esteira.
     # Vazio desliga a checagem (não recomendado).
+    # Modelo User Product do ML: anúncio sem catálogo exige garantia declarada.
+    # Ficam em variável de ambiente para mudar sem tocar no código.
+    ml_garantia_tipo: str = os.getenv("ML_GARANTIA_TIPO", "Garantia do vendedor")
+    ml_garantia_prazo: str = os.getenv("ML_GARANTIA_PRAZO", "90 dias")
     ml_categorias_raiz: str = os.getenv("ML_CATEGORIAS_RAIZ", "MLB5672")
 
     # Confiança mínima para um item chegar à tela de aprovação.

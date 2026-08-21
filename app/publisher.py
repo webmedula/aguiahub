@@ -95,10 +95,55 @@ def montar_payload(
         payload["catalog_listing"] = True
         payload["pictures"] = []
     else:
-        payload["title"] = montar_titulo(p)
+        titulo = montar_titulo(p)
+        payload["title"] = titulo
         payload["pictures"] = []     # preenchido quando houver foto própria
         payload["attributes"] = _atributos(p)
+        aplicar_user_product(payload, titulo)
 
+    return payload
+
+
+# Comprimento máximo do family_name: a doc do ML manda respeitar o
+# `max_title_length` do domínio, que no MLB é 60 — o mesmo do título.
+FAMILY_NAME_MAX = 60
+
+
+def aplicar_user_product(payload: dict, titulo: str) -> dict:
+    """Acrescenta `family_name` e a garantia exigidos pelo modelo User Product.
+
+    Erro real na primeira publicação de verdade (injetor A2C59517051):
+
+        The body does not contains some or none of the following properties
+        [family_name]
+
+    O Mercado Livre migrou os anúncios sem catálogo para o modelo *User
+    Product* (os MLBU). Agora, ao criar um anúncio próprio, é preciso mandar
+    ou o `user_product_id` de um produto seu que já exista, ou o
+    `family_name` — o nome da família de produtos que o ML vai criar em nome
+    do vendedor. É campo de topo, não vai dentro de `attributes`.
+
+    A garantia entra junto porque é a exigência seguinte da mesma validação e
+    não faz sentido descobrir isso num segundo deploy. Peça nova de reposição
+    tem garantia do vendedor; o padrão pode ser mudado por variável de
+    ambiente sem mexer no código.
+    """
+    if payload.get("catalog_product_id") or payload.get("user_product_id"):
+        # Publicação por catálogo: a identidade do produto já vem de lá.
+        return payload
+
+    s = get_settings()
+    payload.setdefault("family_name", (titulo or "").strip()[:FAMILY_NAME_MAX])
+
+    termos = {t.get("id") for t in payload.get("sale_terms", [])}
+    sale_terms = list(payload.get("sale_terms", []))
+    if "WARRANTY_TYPE" not in termos:
+        sale_terms.append({"id": "WARRANTY_TYPE",
+                           "value_name": s.ml_garantia_tipo})
+    if "WARRANTY_TIME" not in termos:
+        sale_terms.append({"id": "WARRANTY_TIME",
+                           "value_name": s.ml_garantia_prazo})
+    payload["sale_terms"] = sale_terms
     return payload
 
 
@@ -586,6 +631,7 @@ async def publicar_da_loja(item_id: int,
         "pictures": [{"source": url} for url in fotos[:10]],
         "attributes": _atributos(p),
     }
+    aplicar_user_product(payload, titulo)
 
     try:
         criado = await client.post("/items", payload)
@@ -674,6 +720,7 @@ async def publicar_com_fotos_proprias(item_id: int,
         "pictures": [{"id": i} for i in ids],
         "attributes": _atributos(p),
     }
+    aplicar_user_product(payload, titulo)
 
     try:
         criado = await client.post("/items", payload)

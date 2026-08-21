@@ -43,6 +43,14 @@ ERROS_CONHECIDOS = {
         "completar o cadastro de vendedor no ML.",
     "invalid_catalog_product":
         "o produto de catálogo não aceita novos anúncios.",
+    "[family_name]":
+        "o Mercado Livre passou a exigir o campo 'family_name' (modelo User "
+        "Product) nos anúncios sem catálogo. O Águiahub preenche isso a partir "
+        "da versão 0.14.0 — se a mensagem apareceu, confira no cabeçalho qual "
+        "versão está rodando no VPS.",
+    "[sale_terms]":
+        "falta declarar a garantia do produto. Ajuste ML_GARANTIA_TIPO e "
+        "ML_GARANTIA_PRAZO nas variáveis de ambiente do EasyPanel.",
 }
 
 

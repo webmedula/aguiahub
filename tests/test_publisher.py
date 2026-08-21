@@ -299,3 +299,63 @@ def test_peca_que_nao_esta_pronta_e_recusada_sem_ir_ao_ml(tmp_path, monkeypatch)
     r = asyncio.run(publisher.publicar_selecionados([ids[0]]))
     assert r["publicados"] == 0
     assert "não está pronta" in r["resultados"][0]["mensagem"]
+
+
+# ---------------------------------------------------------------------------
+# Modelo User Product do Mercado Livre (v0.14.0)
+# ---------------------------------------------------------------------------
+
+def test_anuncio_proprio_leva_family_name():
+    """Erro real na primeira publicação de verdade (injetor A2C59517051):
+
+    'The body does not contains some or none of the following properties
+     [family_name]'
+    """
+    p = montar_payload(item(), 3188.83, category_id="MLB1747")
+    assert p["family_name"]
+    assert len(p["family_name"]) <= 60
+
+
+def test_family_name_e_campo_de_topo_nao_atributo():
+    p = montar_payload(item(), 100.0, category_id="MLB1747")
+    ids = {a["id"] for a in p["attributes"]}
+    assert "FAMILY_NAME" not in ids
+    assert "family_name" in p
+
+
+def test_anuncio_proprio_declara_garantia():
+    p = montar_payload(item(), 100.0, category_id="MLB1747")
+    termos = {t["id"]: t["value_name"] for t in p["sale_terms"]}
+    assert termos["WARRANTY_TYPE"]
+    assert termos["WARRANTY_TIME"]
+
+
+def test_catalogo_nao_leva_family_name_nem_garantia():
+    """No catálogo a identidade do produto vem de lá; mandar os nossos briga."""
+    p = montar_payload(item(), 100.0, catalog_product_id="MLB123",
+                       category_id="MLB1747")
+    assert "family_name" not in p
+    assert "sale_terms" not in p
+
+
+def test_family_name_respeita_o_limite_com_titulo_longo():
+    from app.publisher import aplicar_user_product, FAMILY_NAME_MAX
+    payload = aplicar_user_product({}, "X" * 200)
+    assert len(payload["family_name"]) == FAMILY_NAME_MAX
+
+
+def test_garantia_ja_informada_nao_e_duplicada():
+    from app.publisher import aplicar_user_product
+    payload = {"sale_terms": [{"id": "WARRANTY_TYPE",
+                               "value_name": "Garantia de fábrica"}]}
+    aplicar_user_product(payload, "Peça")
+    tipos = [t for t in payload["sale_terms"] if t["id"] == "WARRANTY_TYPE"]
+    assert len(tipos) == 1
+    assert tipos[0]["value_name"] == "Garantia de fábrica"
+
+
+def test_erro_de_family_name_vira_mensagem_explicativa():
+    erro = MLApiError(400, {"message": "The body does not contains some or "
+                            "none of the following properties [family_name]"},
+                      "/items")
+    assert "family_name" in erro.mensagem_amigavel()
