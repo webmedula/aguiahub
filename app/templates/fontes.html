@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block titulo %}Fontes de imagem{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Fontes de imagem autorizadas</h2>
+    <div class="fraco" style="font-size:13px">
+      Sites de cujas fotos a Águia tem direito de uso. Vale para as marcas que
+      vocês representam.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/">Início</a>
+</div>
+
+{% if erro %}
+<div class="aviso" style="border-color:rgba(208,69,63,.4);
+     background:rgba(208,69,63,.1)">{{ erro }}</div>
+{% endif %}
+
+<div class="card">
+  <h2>Acrescentar marca</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Cole o domínio (<code>bosch.com.br</code>) ou o link de qualquer página do
+    site — o sistema tira o domínio sozinho. Subdomínio entra junto:
+    autorizar <code>bosch.com.br</code> já cobre <code>cdn.bosch.com.br</code>,
+    que costuma ser de onde as imagens vêm.
+  </p>
+  <form method="post" action="/fontes"
+        style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div style="flex:1;min-width:260px">
+      <label for="dominio">Site</label>
+      <input id="dominio" name="dominio" required autofocus
+             placeholder="bosch.com.br"
+             style="width:100%;font-size:16px;padding:11px">
+    </div>
+    <div style="flex:1;min-width:220px">
+      <label for="observacao">Marca ou observação (opcional)</label>
+      <input id="observacao" name="observacao"
+             placeholder="Bosch — distribuidor oficial"
+             style="width:100%;font-size:16px;padding:11px">
+    </div>
+    <button type="submit" style="font-size:16px;padding:12px 20px">Autorizar</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Autorizados <span class="fraco" style="font-weight:400">·
+      {{ fontes|length }}</span></h2>
+  {% if not fontes %}
+    <p class="fraco" style="margin:0">Nenhum site autorizado ainda. Enquanto
+      estiver assim, a pesquisa em sites externos traz a ficha técnica mas não
+      aproveita foto de ninguém.</p>
+  {% else %}
+  <table>
+    <tr><th>Site</th><th>Marca / observação</th><th>Autorizado em</th><th></th></tr>
+    {% for f in fontes %}
+    <tr>
+      <td style="font-family:ui-monospace,monospace">{{ f['dominio'] }}</td>
+      <td class="fraco">{{ f['observacao'] or '—' }}</td>
+      <td class="fraco" style="font-size:12px">
+        {{ (f['criado_em'] or '')[:10] }}</td>
+      <td>
+        <form method="post" action="/fontes/remover"
+              onsubmit="return confirm('Tirar {{ f['dominio'] }} da lista?')">
+          <input type="hidden" name="dominio" value="{{ f['dominio'] }}">
+          <button class="secundario" type="submit"
+                  style="font-size:12px;padding:5px 10px">remover</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+{% if do_ambiente %}
+<div class="card">
+  <h2>Vindos da configuração do servidor</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Estes estão em <code>FONTES_IMAGEM_AUTORIZADAS</code> no EasyPanel e valem
+    junto com a lista acima. Para tirar algum, é lá que se mexe.
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    {% for d in do_ambiente %}
+    <span class="pill neutro" style="font-size:12px;padding:5px 12px">{{ d }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Uma distinção que vale guardar</h2>
+  <p style="margin-top:0">A licença de revenda cobre o material do
+    <strong>fabricante</strong> que vocês representam. A fotografia que outro
+    revendedor produziu no estúdio dele é obra dele — ser oficial de uma marca
+    não dá direito sobre a foto de outra loja.</p>
+  <p class="fraco" style="font-size:13px;margin-bottom:0">
+    Por isso a lista é de sites de fabricante e fornecedor. O que a Águia
+    autoriza aqui fica gravado, e cada anúncio guarda de qual site vieram as
+    imagens — se um dia chegar reclamação, dá para responder com precisão.
+  </p>
+</div>
+
+{% endblock %}

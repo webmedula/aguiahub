@@ -162,6 +162,9 @@
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
     <button type="submit" style="font-size:16px;padding:12px 20px">
       Publicar no Mercado Livre</button>
+    <a class="botao secundario" style="font-size:15px;padding:11px 18px"
+       href="/itens/{{ item['id'] }}/preparar?lote_id={{ lote['id'] }}">
+      Editar texto e fotos antes de publicar</a>
   </form>
 </div>
 {% endif %}
@@ -235,6 +238,9 @@
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
     <button type="submit" style="font-size:16px;padding:12px 20px">
       Publicar no Mercado Livre</button>
+    <a class="botao secundario" style="font-size:15px;padding:11px 18px"
+       href="/itens/{{ item['id'] }}/preparar?lote_id={{ lote['id'] }}">
+      Editar texto e fotos antes de publicar</a>
   </form>
 </div>
 {% endif %}

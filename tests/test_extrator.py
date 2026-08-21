@@ -128,12 +128,35 @@ def test_descricao_do_site_fica_marcada_como_referencia():
     assert not hasattr(d, "descricao_do_anuncio")
 
 
-def test_a_descricao_do_anuncio_nao_vem_da_pesquisa():
-    """Nenhum caminho de publicação lê descricao_referencia."""
-    import inspect
-    from app import publisher
-    fonte = inspect.getsource(publisher)
-    assert "descricao_referencia" not in fonte
+def test_descricao_da_pesquisa_so_entra_com_fonte_autorizada(tmp_path,
+                                                              sem_fontes_autorizadas):
+    """A descrição de site NÃO autorizado nunca chega ao item — nem como
+    rascunho editável. Só domínio autorizado (v0.23.0) tem esse privilégio.
+    """
+    from app.publisher import aplicar_dados_da_pesquisa
+
+    sem_fontes_autorizadas.fontes_imagem_autorizadas = ""
+    storage, _, item_id = _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    dados = montar(PAGINA, URL)
+    assert dados.fonte_autorizada is False        # confere a premissa do teste
+
+    aplicar_dados_da_pesquisa(item_id, dados)
+    assert not storage.item(item_id)["descricao_editada"]
+
+
+def test_descricao_da_pesquisa_entra_como_rascunho_quando_autorizado(tmp_path,
+                                                                     sem_fontes_autorizadas):
+    from app.publisher import aplicar_dados_da_pesquisa
+
+    sem_fontes_autorizadas.fontes_imagem_autorizadas = "loja-x.com.br"
+    storage, _, item_id = _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    dados = montar(PAGINA, URL)
+    assert dados.fonte_autorizada is True
+
+    aplicar_dados_da_pesquisa(item_id, dados)
+    item = storage.item(item_id)
+    assert "Módulo de injeção eletrônica" in item["descricao_editada"]
+    assert item["fonte_dados"] == "loja-x.com.br"
 
 
 # --- casamento com o código do ERP -----------------------------------------
@@ -225,15 +248,22 @@ def test_usar_ficha_deixa_a_peca_pronta_e_grava_a_origem(tmp_path,
     assert item["fonte_dados"] == "loja-x.com.br"
 
 
-def test_usar_ficha_nao_leva_a_descricao_do_site(tmp_path,
-                                                 sem_fontes_autorizadas):
-    """Direito sobre a imagem do produto não é direito sobre o texto de vendas."""
+def test_usar_ficha_leva_a_descricao_quando_o_site_e_autorizado(tmp_path,
+                                                                 sem_fontes_autorizadas):
+    """Pedido do João (v0.23.0): domínio autorizado cobre imagem E descrição.
+
+    Antes disso a descrição nunca ia — ficava só de referência na tela. Mudou
+    porque a autorização da Águia, quando existe, é declarada para "revenda e
+    uso das imagens dos produtos" daquela marca — e o João pediu
+    explicitamente "preciso de todas informações". Continua sendo só o ponto
+    de partida: a tela de pré-anúncio deixa editar antes de publicar.
+    """
     from app.publisher import usar_ficha_da_pesquisa
     sem_fontes_autorizadas.fontes_imagem_autorizadas = "loja-x.com.br"
     storage, _, item_id = _item_de_teste(tmp_path, sem_fontes_autorizadas)
 
     usar_ficha_da_pesquisa(item_id, montar(PAGINA, URL))
-    assert not storage.item(item_id)["loja_descricao"]
+    assert "Módulo de injeção eletrônica" in storage.item(item_id)["loja_descricao"]
 
 
 def test_usar_ficha_recusa_fonte_nao_autorizada(tmp_path,
@@ -246,3 +276,65 @@ def test_usar_ficha_recusa_fonte_nao_autorizada(tmp_path,
     assert r["ok"] is False
     assert "fontes autorizadas" in r["mensagem"]
     assert storage.item(item_id)["status"] == "na_fila"
+
+
+# --- fontes geridas pela tela, não pelo deploy (v0.22.0) -------------------
+
+def test_fonte_autorizada_pelo_banco_vale(tmp_path, sem_fontes_autorizadas):
+    """A Águia acrescenta marca representada o tempo todo.
+
+    Se cada marca nova exigisse mexer em variável de ambiente e refazer o
+    deploy, na prática ninguém acrescentaria — e a pessoa acabaria pulando
+    peça que dava para anunciar.
+    """
+    from app import storage
+    storage_, _, _ = _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    assert fonte_autorizada_para_imagem("https://bosch.com.br/x") is False
+
+    storage.autorizar_fonte("bosch.com.br", "Bosch — oficial")
+    assert fonte_autorizada_para_imagem("https://cdn.bosch.com.br/a.jpg") is True
+
+
+def test_dominio_e_extraido_de_url_colada(tmp_path, sem_fontes_autorizadas):
+    """A pessoa cola o link do produto, não o domínio limpo."""
+    from app import storage
+    _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    assert storage.autorizar_fonte(
+        "https://www.bosch.com.br/produtos/modulo?ref=1") == "bosch.com.br"
+
+
+def test_texto_que_nao_e_site_e_recusado(tmp_path, sem_fontes_autorizadas):
+    from app import storage
+    _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    with pytest.raises(ValueError):
+        storage.autorizar_fonte("bosch")
+
+
+def test_remover_fonte_volta_a_bloquear(tmp_path, sem_fontes_autorizadas):
+    from app import storage
+    _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    storage.autorizar_fonte("bosch.com.br")
+    storage.remover_fonte("bosch.com.br")
+    assert fonte_autorizada_para_imagem("https://bosch.com.br/x") is False
+
+
+def test_ambiente_e_banco_somam(tmp_path, sem_fontes_autorizadas):
+    """Quem já tinha a variável configurada não perde nada."""
+    from app import storage
+    from app.extrator import fontes_permitidas
+    _item_de_teste(tmp_path, sem_fontes_autorizadas)
+    sem_fontes_autorizadas.fontes_imagem_autorizadas = "delphi.com"
+    storage.autorizar_fonte("bosch.com.br")
+    assert {"delphi.com", "bosch.com.br"} <= fontes_permitidas()
+
+
+def test_falha_de_banco_nao_libera_geral(monkeypatch):
+    """Erro ao ler a lista não pode virar 'pode tudo'."""
+    import sqlite3
+    from app import storage
+
+    def explode():
+        raise sqlite3.Error("banco indisponível")
+
+    monkeypatch.setattr(storage, "listar_fontes", explode)
+    assert storage.dominios_autorizados() == set()

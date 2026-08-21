@@ -5,6 +5,84 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.23.0 — 21/08/2026
+
+**Tela de pré-anúncio: editar texto e trocar foto antes de publicar.**
+
+Quatro pedidos do João na mesma mensagem, todos ligados:
+
+1. **Bug: "aproveitar os dados técnicos" não levava a lugar nenhum.** A rota
+   `/aplicar-pesquisa` salvava os dados e voltava para `/fila/{lote}` — que
+   mostra a peça de MAIOR valor pendente, não necessariamente a mesma que
+   acabou de ser pesquisada. O efeito parecia "não aconteceu nada". Agora as
+   duas rotas de pesquisa (`usar-ficha` e `aplicar-pesquisa`) levam direto
+   para a tela nova de pré-anúncio **desta peça**.
+
+2. **Descrição de site autorizado agora pode ser usada.** Até aqui, mesmo com
+   o domínio autorizado, só a foto entrava — a descrição ficava só de
+   referência na tela, por entender que direito sobre imagem não é direito
+   sobre texto de vendas. O João confirmou explicitamente que a autorização
+   cobre "revenda e uso das imagens dos produtos" e pediu "todas as
+   informações". Mudou para: **domínio autorizado → foto e descrição podem
+   ser usadas**, sempre como rascunho editável. Site **não** autorizado
+   continua só com fato técnico (aplicação, marca) — nunca texto nem foto.
+
+3. **Tela de pré-anúncio nova** (`/itens/{id}/preparar`): mostra o título e a
+   descrição que vão para o anúncio (vindos da loja, do site autorizado, ou
+   montados do ERP) com campo para editar os dois antes de publicar. Nada
+   aqui publica nada.
+
+4. **Foto própria substitui a do site, não soma.** A mesma tela deixa tirar
+   foto própria; se houver alguma, ela sozinha vai para o anúncio no lugar
+   das fotos da loja/site — dá para começar o pré-anúncio com a foto
+   encontrada e trocar depois pela foto de verdade da peça, sem editar código
+   nem mexer em duas telas diferentes. Também dá para remover uma foto do
+   site individualmente sem precisar tirar foto própria.
+
+Por baixo do capô, `publicar_da_loja` deixou de exigir foto da loja — agora
+aceita publicar só com foto própria também, então virou o caminho único para
+qualquer combinação de fonte de foto. `titulo_editado` e `descricao_editada`
+são as duas colunas novas que guardam a edição do operador; elas têm
+prioridade sobre o que seria montado automaticamente, mas nunca entram na
+publicação por catálogo (lá o título e a ficha são do próprio Mercado Livre).
+
+Onze testes novos, 174 no total.
+
+---
+
+## v0.22.0 — 21/08/2026
+
+**"Sempre estamos acrescentando novas marcas."**
+
+Então a lista de fontes autorizadas não pode viver numa variável de ambiente.
+Do jeito que estava, cada marca nova exigia abrir o EasyPanel, editar a
+variável e refazer o deploy. Na prática ninguém faria isso no meio do
+trabalho — o operador ia acabar pulando peça que dava para anunciar.
+
+Passou para dentro do sistema, gravado no banco:
+
+- Tela nova em `/fontes`: acrescentar, ver e remover marcas. Sem deploy, sem
+  reiniciar nada.
+- Aceita o **link colado**, não só o domínio limpo: cole
+  `https://www.bosch.com.br/produtos/modulo?ref=1` e o sistema guarda
+  `bosch.com.br`. Subdomínio entra junto, que é onde as imagens costumam
+  estar (`cdn.bosch.com.br`).
+- Campo de observação para anotar a marca — daqui a um ano, `denso.com.br` na
+  lista sem contexto não diz nada.
+- **Botão "Autorizar este site" na própria tela de pesquisa.** Quando a foto
+  aparece bloqueada, dá para liberar ali mesmo e seguir, em vez de abandonar
+  a peça para ir configurar em outro lugar.
+- A variável `FONTES_IMAGEM_AUTORIZADAS` continua valendo e soma com a lista
+  do banco — quem já configurou não perde nada. A tela mostra as duas origens
+  separadas.
+
+Detalhe de segurança: se a leitura do banco falhar, a lista volta **vazia**,
+não liberada. Erro de infraestrutura não pode virar permissão.
+
+Seis testes novos, 164 no total.
+
+---
+
 ## v0.21.0 — 21/08/2026
 
 **A pesquisa passa a alimentar o anúncio.**

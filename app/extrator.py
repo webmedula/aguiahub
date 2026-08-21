@@ -95,14 +95,24 @@ def dominio_de(url: str) -> str:
     return (urlparse(url).hostname or "").lower().removeprefix("www.")
 
 
-def fonte_autorizada_para_imagem(url: str) -> bool:
-    """A Águia declarou ter direito de usar imagem deste domínio?
+def fontes_permitidas() -> set[str]:
+    """Domínios autorizados: os do banco mais os da variável de ambiente.
 
-    Lista em FONTES_IMAGEM_AUTORIZADAS, separada por vírgula. Vazia = nenhuma.
+    O banco é o caminho normal — a Águia acrescenta marca representada o tempo
+    todo, e cada uma dessas não pode exigir mexer no EasyPanel e refazer o
+    deploy. A variável continua valendo para quem já a configurou.
     """
-    permitidos = {d.strip().lower().removeprefix("www.")
-                  for d in (get_settings().fontes_imagem_autorizadas or "").split(",")
-                  if d.strip()}
+    from app import storage
+
+    do_ambiente = {d.strip().lower().removeprefix("www.")
+                   for d in (get_settings().fontes_imagem_autorizadas or "").split(",")
+                   if d.strip()}
+    return do_ambiente | storage.dominios_autorizados()
+
+
+def fonte_autorizada_para_imagem(url: str) -> bool:
+    """A Águia declarou ter direito de usar imagem deste domínio?"""
+    permitidos = fontes_permitidas()
     if not permitidos:
         return False
     if "*" in permitidos:

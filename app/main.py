@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import logging
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exception_handlers import http_exception_handler
@@ -21,6 +23,7 @@ from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
                             escolher_publicavel)
 from app import loja
+from app.extrator import fontes_permitidas
 from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            publicar_aprovados, publicar_com_fotos_proprias,
@@ -31,8 +34,9 @@ from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            resumir, testar_item, vincular_por_link,
                            vincular_qualquer,
                            vincular_produto_da_loja)
-from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
-                        ler_planilha, montar_titulo, resumo_da_selecao)
+from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, LinhaProduto,
+                        calcular_preco, ler_planilha, montar_descricao,
+                        montar_titulo, resumo_da_selecao)
 from app.triagem import triar_planilha, resumo as resumo_triagem
 
 logging.basicConfig(level=logging.INFO,
@@ -155,11 +159,9 @@ async def home(request: Request):
         "diagnostico": diagnostico,
         "lotes": storage.listar_lotes(),
         "problemas_config": s.validate(),
-        # mostra na tela quais domínios estão autorizados a ceder imagem — sem
-        # isso não há como confirmar que a variável do EasyPanel pegou
-        "fontes_imagem": [d.strip() for d in
-                          (s.fontes_imagem_autorizadas or "").split(",")
-                          if d.strip()],
+        # domínios autorizados a ceder imagem: os do banco e os do ambiente.
+        # Fica visível para dar para confirmar sem precisar testar um link.
+        "fontes_imagem": sorted(fontes_permitidas()),
     })
 
 
@@ -427,6 +429,34 @@ async def prontas(request: Request, lote_id: int):
     })
 
 
+@app.get("/fontes", response_class=HTMLResponse)
+async def fontes(request: Request, erro: str = ""):
+    """Gestão das fontes de imagem autorizadas, sem passar pelo EasyPanel."""
+    return templates.TemplateResponse(request, "fontes.html", {
+        "request": request,
+        "fontes": storage.listar_fontes(),
+        "do_ambiente": [d.strip() for d in
+                        (s.fontes_imagem_autorizadas or "").split(",") if d.strip()],
+        "erro": erro,
+    })
+
+
+@app.post("/fontes")
+async def autorizar_fonte(dominio: str = Form(...), observacao: str = Form(""),
+                          voltar_para: str = Form("")):
+    try:
+        storage.autorizar_fonte(dominio, observacao)
+    except ValueError as exc:
+        return RedirectResponse(f"/fontes?erro={quote(str(exc))}", status_code=303)
+    return RedirectResponse(voltar_para or "/fontes", status_code=303)
+
+
+@app.post("/fontes/remover")
+async def remover_fonte(dominio: str = Form(...)):
+    storage.remover_fonte(dominio)
+    return RedirectResponse("/fontes", status_code=303)
+
+
 @app.get("/lotes/{lote_id}/decididas", response_class=HTMLResponse)
 async def decididas(request: Request, lote_id: int, status: str = "",
                     busca: str = ""):
@@ -497,18 +527,92 @@ async def usar_ficha(item_id: int, url: str = Form(...),
     usada = usar_ficha_da_pesquisa(item_id, resultado["dados"])
     if not usada["ok"]:
         raise HTTPException(400, usada["mensagem"])
-    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+    # Vai direto para a tela de pré-anúncio: dali dá para revisar o texto
+    # trazido do site e trocar a foto antes de publicar de verdade.
+    return RedirectResponse(f"/itens/{item_id}/preparar?lote_id={lote_id}",
+                            status_code=303)
 
 
 @app.post("/itens/{item_id}/aplicar-pesquisa")
 async def aplicar_pesquisa(item_id: int, url: str = Form(...),
                            lote_id: int = Form(...)):
-    """Guarda na peça os fatos técnicos confirmados pela pessoa."""
+    """Guarda na peça os fatos técnicos confirmados pela pessoa.
+
+    Antes (até v0.22.0) isto voltava para `/fila/{lote_id}`, que mostra a
+    peça de MAIOR valor pendente — nem sempre a mesma que acabou de ser
+    pesquisada. O João reportou o efeito: "não está levando para o processo
+    de criar o anúncio". Agora vai direto para a tela de pré-anúncio desta
+    peça, onde dá para ver o que foi aproveitado e seguir com foto própria.
+    """
     resultado = await pesquisar_em_site(item_id, url)
     if not resultado["ok"]:
         raise HTTPException(400, resultado["mensagem"])
     aplicar_dados_da_pesquisa(item_id, resultado["dados"])
-    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+    return RedirectResponse(f"/itens/{item_id}/preparar?lote_id={lote_id}",
+                            status_code=303)
+
+
+@app.get("/itens/{item_id}/preparar", response_class=HTMLResponse)
+async def preparar(request: Request, item_id: int, lote_id: int):
+    """Tela de pré-anúncio: revisar/editar título e descrição, e gerenciar
+    fotos, antes de publicar de verdade no Mercado Livre.
+
+    Nada aqui publica nada — é só o que fica pronto pra mandar quando o
+    operador clicar em publicar, na fila ou na lista de prontas.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        raise HTTPException(404, "Peça não encontrada.")
+
+    p = LinhaProduto(
+        aba="", linha=linha["linha"], codigo=linha["sku"] or "",
+        descricao=linha["descricao_erp"] or "",
+        quantidade=int(linha["quantidade"] or 1),
+        marca=linha["marca"] or "",
+        aplicacao=linha["aplicacao"] or "",
+    )
+    titulo_padrao = (linha["loja_nome"] or montar_titulo(p))[:60]
+    descricao_padrao = linha["loja_descricao"] or montar_descricao(p)
+    fotos_site = json.loads(linha["loja_fotos"] or "[]")
+    fotos_proprias = mod_fotos.listar(item_id)
+
+    return templates.TemplateResponse(request, "preparar.html", {
+        "request": request, "lote_id": lote_id, "item": linha,
+        "titulo_atual": linha["titulo_editado"] or titulo_padrao,
+        "descricao_atual": linha["descricao_editada"] or descricao_padrao,
+        "fotos_site": fotos_site,
+        "fotos_proprias": fotos_proprias,
+        "pronto": bool(fotos_site or fotos_proprias),
+    })
+
+
+@app.post("/itens/{item_id}/preparar")
+async def salvar_preparo(item_id: int, lote_id: int = Form(...),
+                         titulo: str = Form(""), descricao: str = Form("")):
+    """Grava o título e a descrição editados pelo operador na tela de pré-anúncio."""
+    if storage.item(item_id) is None:
+        raise HTTPException(404, "Peça não encontrada.")
+    storage.atualizar_dados_catalogo(
+        item_id,
+        titulo_editado=titulo.strip()[:60] or None,
+        descricao_editada=descricao.strip()[:4000] or None,
+    )
+    return RedirectResponse(f"/itens/{item_id}/preparar?lote_id={lote_id}",
+                            status_code=303)
+
+
+@app.post("/itens/{item_id}/loja-fotos/remover")
+async def remover_foto_do_site(item_id: int, lote_id: int = Form(...),
+                               url: str = Form(...)):
+    """Tira uma foto vinda da loja/site da lista do pré-anúncio."""
+    linha = storage.item(item_id)
+    if linha is None:
+        raise HTTPException(404, "Peça não encontrada.")
+    restantes = [f for f in json.loads(linha["loja_fotos"] or "[]") if f != url]
+    storage.atualizar_dados_catalogo(
+        item_id, loja_fotos=json.dumps(restantes, ensure_ascii=False))
+    return RedirectResponse(f"/itens/{item_id}/preparar?lote_id={lote_id}",
+                            status_code=303)
 
 
 @app.get("/itens/{item_id}/testar", response_class=HTMLResponse)
@@ -623,10 +727,21 @@ async def publicar_item_da_loja(item_id: int, lote_id: int = Form(...),
     return RedirectResponse(f"/fila/{lote_id}", status_code=303)
 
 
+def _destino_fotos(item_id: int, lote_id: int, volta_para: str) -> str:
+    if volta_para == "preparar":
+        return f"/itens/{item_id}/preparar?lote_id={lote_id}"
+    return f"/fila/{lote_id}"
+
+
 @app.post("/itens/{item_id}/fotos")
 async def enviar_fotos(item_id: int, lote_id: int = Form(...),
-                       arquivos: list[UploadFile] = File(...)):
-    """Recebe as fotos tiradas pelo operador."""
+                       arquivos: list[UploadFile] = File(...),
+                       volta_para: str = Form("fila")):
+    """Recebe as fotos tiradas pelo operador.
+
+    Na tela de pré-anúncio, essas fotos SUBSTITUEM a da loja/site quando
+    chega a hora de publicar — não somam.
+    """
     enviadas, problemas = 0, []
     for arquivo in arquivos:
         try:
@@ -638,16 +753,19 @@ async def enviar_fotos(item_id: int, lote_id: int = Form(...),
 
     if not enviadas and problemas:
         raise HTTPException(400, " ".join(problemas))
-    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+    return RedirectResponse(_destino_fotos(item_id, lote_id, volta_para),
+                            status_code=303)
 
 
 @app.post("/itens/{item_id}/fotos/{nome}/apagar")
-async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...)):
+async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...),
+                      volta_para: str = Form("fila")):
     try:
         mod_fotos.apagar(item_id, nome)
     except mod_fotos.FotoInvalida as exc:
         raise HTTPException(400, str(exc))
-    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+    return RedirectResponse(_destino_fotos(item_id, lote_id, volta_para),
+                            status_code=303)
 
 
 @app.get("/fotos/{item_id}/{nome}")

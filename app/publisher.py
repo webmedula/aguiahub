@@ -158,6 +158,27 @@ def aplicar_user_product(payload: dict, titulo: str) -> dict:
     return payload
 
 
+def _titulo_efetivo(linha, titulo_padrao: str) -> str:
+    """O título que o operador editou na tela de pré-anúncio tem prioridade."""
+    editado = (linha["titulo_editado"] or "").strip()
+    return editado[:FAMILY_NAME_MAX] if editado else titulo_padrao
+
+
+def _descricao_efetiva(linha, p: LinhaProduto) -> str:
+    """Prioridade: edição do operador > texto trazido da fonte > texto montado.
+
+    ``loja_descricao`` só chega aqui preenchida quando a fonte é a própria
+    loja da Águia ou um site que a Águia declarou ter direito de usar
+    (``fonte_dados`` fica gravado nesse caso) — nunca de site não autorizado.
+    """
+    editada = (linha["descricao_editada"] or "").strip()
+    if editada:
+        return editada
+    if linha["loja_descricao"]:
+        return linha["loja_descricao"]
+    return montar_descricao(p)
+
+
 def _atributos(p: LinhaProduto) -> list[dict]:
     attrs: list[dict] = []
     if p.marca:
@@ -599,19 +620,58 @@ async def vincular_produto_da_loja(item_id: int, referencia: str) -> dict:
             "produto": produto}
 
 
+async def _imagens_do_anuncio(client: MLClient, item_id: int,
+                              fotos_site: list[str]) -> list[dict]:
+    """Escolhe as fotos do anúncio: foto própria SUBSTITUI a do site.
+
+    O pré-anúncio nasce com a foto da loja ou do site pesquisado. Se depois o
+    operador tira foto própria da peça — porque quer trocar, ou porque a do
+    site não convenceu —, ela passa a valer sozinha: publicar as duas fontes
+    misturadas não faz sentido nenhum. É o fluxo pedido pelo João: "quanto as
+    fotos eu quero para fazer o pré-anúncio, depois eu gero outras fotos para
+    substituir".
+    """
+    from app import fotos as mod_fotos
+
+    proprias = mod_fotos.listar(item_id)
+    if proprias:
+        imagens: list[dict] = []
+        for nome in proprias[:mod_fotos.MAX_FOTOS]:
+            foto_id = await client.enviar_foto(mod_fotos.ler(item_id, nome), nome)
+            if foto_id:
+                imagens.append({"id": foto_id})
+        return imagens
+
+    # As imagens são da própria Águia (loja ou site autorizado). O ML baixa a
+    # partir da URL e processa em segundo plano: o anúncio pode aparecer sem
+    # foto por alguns minutos logo depois de criado. Isso é normal — não é erro.
+    return [{"source": url} for url in fotos_site[:10]]
+
+
 async def publicar_da_loja(item_id: int,
                            listing_type_id: str = "gold_special") -> dict:
-    """Cria um anúncio PRÓPRIO no ML usando as fotos da loja da Águia."""
+    """Cria um anúncio PRÓPRIO no ML com foto da loja, de site pesquisado, ou
+    tirada pelo operador — nessa ordem de prioridade quando há mais de uma.
+
+    É o mesmo caminho para as três origens porque, do ponto de vista do
+    Mercado Livre, são a mesma coisa: um anúncio sem catálogo, com foto
+    própria e o texto que o operador aprovou (editado ou não) na tela de
+    pré-anúncio.
+    """
     linha = storage.item(item_id)
     if linha is None:
         return {"ok": False, "mensagem": "Item não encontrado."}
 
-    fotos = json.loads(linha["loja_fotos"] or "[]")
-    if not fotos:
-        return {"ok": False, "mensagem": "Este item não tem fotos da loja."}
+    from app import fotos as mod_fotos
+
+    fotos_site = json.loads(linha["loja_fotos"] or "[]")
+    if not fotos_site and not mod_fotos.listar(item_id):
+        return {"ok": False, "mensagem": (
+            "Este item não tem foto — nem da loja/site, nem tirada aqui.")}
 
     client = MLClient()
-    titulo = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+    titulo_base = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+    titulo = _titulo_efetivo(linha, titulo_base)
 
     categoria = linha["catalog_category_id"]
     if not categoria:
@@ -628,6 +688,15 @@ async def publicar_da_loja(item_id: int,
         marca=linha["marca"] or "",
     )
 
+    try:
+        imagens = await _imagens_do_anuncio(client, item_id, fotos_site)
+    except MLApiError as exc:
+        return {"ok": False, "mensagem": (
+            f"O Mercado Livre recusou uma foto: {exc.mensagem_amigavel()}")}
+    if not imagens:
+        return {"ok": False,
+                "mensagem": "Nenhuma foto pôde ser enviada ao Mercado Livre."}
+
     payload = {
         "site_id": get_settings().ml_site_id,
         "category_id": categoria,
@@ -637,10 +706,7 @@ async def publicar_da_loja(item_id: int,
         "buying_mode": "buy_it_now",
         "condition": "new",
         "listing_type_id": listing_type_id,
-        # As imagens são da própria Águia. O ML baixa a partir da URL e
-        # processa em segundo plano: o anúncio pode aparecer sem foto por
-        # alguns minutos logo depois de criado. Isso é normal — não é erro.
-        "pictures": [{"source": url} for url in fotos[:10]],
+        "pictures": imagens,
         "attributes": _atributos(p),
     }
     aplicar_user_product(payload, titulo)
@@ -656,7 +722,7 @@ async def publicar_da_loja(item_id: int,
     storage.atualizar_item(item_id, status=PUBLICADO, ml_item_id=ml_id,
                            permalink=criado.get("permalink"))
 
-    descricao = linha["loja_descricao"] or montar_descricao(p)
+    descricao = _descricao_efetiva(linha, p)
     try:
         await client.post(f"/items/{ml_id}/description", {"plain_text": descricao})
     except MLApiError as exc:
@@ -697,7 +763,7 @@ async def publicar_com_fotos_proprias(item_id: int,
         marca=linha["marca"] or "",
         aplicacao=linha["aplicacao"] or "",
     )
-    titulo = montar_titulo(p)
+    titulo = _titulo_efetivo(linha, montar_titulo(p))
 
     categoria = linha["catalog_category_id"] or await prever_categoria(client, titulo)
     if not categoria:
@@ -747,7 +813,7 @@ async def publicar_com_fotos_proprias(item_id: int,
                            permalink=criado.get("permalink"))
     try:
         await client.post(f"/items/{ml_id}/description",
-                          {"plain_text": montar_descricao(p)})
+                          {"plain_text": _descricao_efetiva(linha, p)})
     except MLApiError as exc:
         log.warning("Anúncio %s criado, descrição falhou: %s", ml_id,
                     exc.mensagem_amigavel())
@@ -888,7 +954,8 @@ async def montar_payload_do_item(item_id: int,
                     category_id=linha["catalog_category_id"],
                     listing_type_id=listing_type_id)}
 
-    titulo = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+    titulo_base = (linha["loja_nome"] or linha["titulo"] or "")[:60].strip()
+    titulo = _titulo_efetivo(linha, titulo_base)
     categoria = linha["catalog_category_id"]
     if not categoria:
         categoria = await prever_categoria(client, titulo)
@@ -898,11 +965,18 @@ async def montar_payload_do_item(item_id: int,
 
     if status == DA_LOJA:
         # No teste não subimos imagem ao ML — ficaria foto órfã na conta a cada
-        # clique. Mostramos quantas seriam enviadas.
-        fotos_do_item = json.loads(linha["loja_fotos"] or "[]")
-        imagens = [{"id": f"(foto {i + 1} da loja, enviada na publicação)"}
-                   for i in range(len(fotos_do_item[:10]))]
-        caminho = "foto da loja da Águia"
+        # clique. Mostramos quantas seriam enviadas. Foto própria substitui a
+        # da loja/site, igual acontece na publicação de verdade.
+        proprias_do_item = mod_fotos.listar(item_id)
+        if proprias_do_item:
+            imagens = [{"id": f"(foto {i + 1} própria, enviada na publicação)"}
+                       for i in range(len(proprias_do_item[:mod_fotos.MAX_FOTOS]))]
+            caminho = "foto própria (substituindo a da loja/site)"
+        else:
+            fotos_do_item = json.loads(linha["loja_fotos"] or "[]")
+            imagens = [{"id": f"(foto {i + 1} da loja/site, enviada na publicação)"}
+                       for i in range(len(fotos_do_item[:10]))]
+            caminho = "foto da loja da Águia ou do site pesquisado"
     elif status == COM_FOTO_PROPRIA:
         # No teste não subimos as imagens ao ML — ficaria imagem órfã na conta
         # a cada clique. Marcamos quantas seriam enviadas.
@@ -1114,14 +1188,20 @@ def _codigo_confere(codigo_erp: str, dados) -> bool:
 def usar_ficha_da_pesquisa(item_id: int, dados) -> dict:
     """Deixa a peça pronta para anunciar com a ficha e as fotos do site lido.
 
-    Só chega aqui quando o domínio está em FONTES_IMAGEM_AUTORIZADAS, ou seja,
-    quando a Águia declarou ter direito sobre aquele material. O domínio fica
-    gravado em `fonte_dados`: se um dia chegar reclamação sobre a imagem de
-    algum anúncio, dá para responder de onde veio, em vez de adivinhar.
+    Só chega aqui quando o domínio está autorizado (banco de `/fontes` ou
+    FONTES_IMAGEM_AUTORIZADAS), ou seja, quando a Águia declarou ter direito
+    sobre aquele material — resenda e uso de imagem. O domínio fica gravado em
+    `fonte_dados`: se um dia chegar reclamação sobre a imagem de algum
+    anúncio, dá para responder de onde veio, em vez de adivinhar.
 
-    O texto do anúncio continua sendo montado por nós a partir dos dados da
-    peça — descrição de site alheio é obra dele, e o direito de usar a imagem
-    do produto não é o mesmo que o de copiar o texto de vendas.
+    A descrição do site TAMBÉM entra, a partir da v0.23.0 — pedido explícito
+    do João depois de confirmar que a autorização da Águia cobre "revenda e
+    uso das imagens dos produtos" para essas marcas: "deixa liberado para
+    pegar as fotos e a descrição". Ela chega como ponto de partida editável
+    (`loja_descricao`), não como texto final — a tela de pré-anúncio deixa
+    revisar antes de publicar. Continua vazia quando o site NÃO está
+    autorizado (só dá para chegar aqui com `dados.fotos` preenchido, e isso
+    só acontece com fonte autorizada).
     """
     linha = storage.item(item_id)
     if linha is None:
@@ -1130,8 +1210,7 @@ def usar_ficha_da_pesquisa(item_id: int, dados) -> dict:
         return {"ok": False, "mensagem": (
             f"{dados.dominio} não está na lista de fontes autorizadas, então "
             "as fotos dele não podem ser usadas. Autorize o domínio em "
-            "FONTES_IMAGEM_AUTORIZADAS se a Águia tem direito sobre esse "
-            "material.")}
+            "/fontes se a Águia tem direito sobre esse material.")}
 
     aplicar_dados_da_pesquisa(item_id, dados)
     storage.atualizar_dados_catalogo(
@@ -1140,7 +1219,9 @@ def usar_ficha_da_pesquisa(item_id: int, dados) -> dict:
         loja_url=dados.url,
         loja_nome=(dados.nome or linha["descricao_erp"] or "")[:200],
         loja_fotos=json.dumps(dados.fotos[:10], ensure_ascii=False),
-        loja_descricao=None,                 # descrição do site NÃO vai junto
+        loja_descricao=(dados.descricao_referencia[:4000]
+                        if dados.fonte_autorizada and dados.descricao_referencia
+                        else None),
         fonte_dados=dados.dominio,
         decidido_em=datetime.now(timezone.utc).isoformat(),
     )
@@ -1150,11 +1231,18 @@ def usar_ficha_da_pesquisa(item_id: int, dados) -> dict:
 
 
 def aplicar_dados_da_pesquisa(item_id: int, dados) -> dict:
-    """Guarda no item os FATOS técnicos trazidos do site.
+    """Guarda no item os FATOS técnicos trazidos do site, sempre.
 
     Fato técnico — em que veículo aplica, qual o código equivalente, qual a
-    marca — não tem dono: é a realidade da peça. O que fica de fora é o texto
-    descritivo e a foto do site alheio.
+    marca — não tem dono: é a realidade da peça. Vale para qualquer site,
+    autorizado ou não.
+
+    A descrição é diferente: só é aproveitada (como rascunho editável, em
+    `descricao_editada`) quando `dados.fonte_autorizada` é verdadeiro — isto
+    é, quando a Águia declarou ter direito sobre o material daquele domínio.
+    De site não autorizado (o caso mais comum: fabricante que não representa,
+    concorrente, distribuidor qualquer), o texto continua sendo só referência
+    de tela — nunca entra no anúncio.
     """
     linha = storage.item(item_id)
     if linha is None:
@@ -1166,6 +1254,10 @@ def aplicar_dados_da_pesquisa(item_id: int, dados) -> dict:
     if dados.marca and (linha["marca"] or "").strip().upper() in \
             ("", "OUTRAS MARCAS", "DIVERSOS", "SEM MARCA", "GERAL"):
         campos["marca"] = dados.marca
+    if (dados.fonte_autorizada and dados.descricao_referencia
+            and not (linha["descricao_editada"] or "").strip()):
+        campos["descricao_editada"] = dados.descricao_referencia[:4000]
+        campos["fonte_dados"] = dados.dominio
 
     if campos:
         with storage.conexao() as conn:

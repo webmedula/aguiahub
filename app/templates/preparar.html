@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block titulo %}Pré-anúncio{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Pré-anúncio</h2>
+    <div class="fraco" style="font-size:13px">
+      Nada aqui publica nada — revise o texto e as fotos e publique quando
+      estiver pronto.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+<div class="card">
+  <div style="font-size:22px;font-weight:600;line-height:1.3">
+    {{ item['descricao_erp'] }}</div>
+  <div style="font-size:16px;font-family:ui-monospace,monospace;color:#7aa5ff">
+    {{ item['sku'] }}</div>
+  <table style="margin-top:12px;font-size:14px;max-width:600px">
+    <tr><th style="width:110px">Marca</th><td>{{ item['marca'] or '—' }}</td></tr>
+    {% if item['aplicacao'] %}
+    <tr><th>Aplicação</th><td>{{ item['aplicacao'] }}</td></tr>
+    {% endif %}
+    <tr><th>Preço</th><td>R$ {{ '%.2f'|format(item['preco'] or 0) }}</td></tr>
+    <tr><th>Estoque</th><td>{{ item['quantidade'] }} unidade(s)</td></tr>
+    {% if item['fonte_dados'] %}
+    <tr><th>Fonte dos dados</th><td>{{ item['fonte_dados'] }}
+      {% if item['loja_url'] %}· <a href="{{ item['loja_url'] }}" target="_blank"
+        rel="noopener">ver origem ↗</a>{% endif %}</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<div class="card">
+  <h2>Texto do anúncio</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Título e descrição começam com o que a Águia montou ou trouxe da fonte
+    autorizada — edite à vontade antes de publicar.
+  </p>
+  <form method="post" action="/itens/{{ item['id'] }}/preparar">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <div style="margin-bottom:14px">
+      <label for="titulo">Título <span class="fraco">· até 60 caracteres</span></label>
+      <input id="titulo" name="titulo" maxlength="60" value="{{ titulo_atual }}"
+             style="width:100%;font-size:16px;padding:11px">
+    </div>
+    <div style="margin-bottom:14px">
+      <label for="descricao">Descrição</label>
+      <textarea id="descricao" name="descricao" rows="8" maxlength="4000"
+                style="width:100%;font-size:14px;padding:11px;background:#11141a;
+                       border:1px solid var(--linha);color:var(--txt);
+                       border-radius:7px;font-family:inherit"
+                >{{ descricao_atual }}</textarea>
+    </div>
+    <button type="submit">Salvar texto</button>
+  </form>
+  {% if item['status'] == 'aguardando_aprovacao' %}
+  <p class="fraco" style="font-size:12px;margin-bottom:0;margin-top:10px">
+    Esta peça está ligada ao catálogo do Mercado Livre — o título e a ficha
+    vêm de lá e o que você salvar aqui não é usado nesse caminho.
+  </p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Fotos <span class="fraco" style="font-weight:400">·
+      {{ (fotos_proprias|length) if fotos_proprias else (fotos_site|length) }}
+      vão para o anúncio</span></h2>
+
+  {% if fotos_proprias %}
+    <p style="margin-top:0">
+      <strong>Vão as fotos que você tirou</strong> — elas substituem as da
+      loja/site abaixo quando publicar.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      {% for f in fotos_proprias %}
+      <div style="position:relative">
+        <img src="/fotos/{{ item['id'] }}/{{ f }}" alt=""
+             style="width:130px;height:130px;object-fit:cover;background:#fff;
+                    border-radius:10px;border:1px solid var(--linha)">
+        <form method="post" action="/itens/{{ item['id'] }}/fotos/{{ f }}/apagar"
+              style="position:absolute;top:4px;right:4px">
+          <input type="hidden" name="lote_id" value="{{ lote_id }}">
+          <input type="hidden" name="volta_para" value="preparar">
+          <button type="submit" title="apagar esta foto"
+                  style="background:rgba(0,0,0,.65);border:0;color:#fff;
+                         border-radius:50%;width:26px;height:26px;padding:0;
+                         cursor:pointer;font-size:15px;line-height:1">×</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  {% elif fotos_site %}
+    <p class="fraco" style="font-size:13px;margin-top:0">
+      Vão as fotos de {{ item['fonte_dados'] or 'origem' }}. Tire foto própria
+      abaixo se quiser substituir.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      {% for f in fotos_site %}
+      <div style="position:relative">
+        <img src="{{ f }}" alt="" loading="lazy"
+             style="width:130px;height:130px;object-fit:contain;background:#fff;
+                    border-radius:10px;border:1px solid var(--linha)">
+        <form method="post" action="/itens/{{ item['id'] }}/loja-fotos/remover"
+              style="position:absolute;top:4px;right:4px"
+              onsubmit="return confirm('Tirar esta foto do pré-anúncio?')">
+          <input type="hidden" name="lote_id" value="{{ lote_id }}">
+          <input type="hidden" name="url" value="{{ f }}">
+          <button type="submit" title="tirar esta foto"
+                  style="background:rgba(0,0,0,.65);border:0;color:#fff;
+                         border-radius:50%;width:26px;height:26px;padding:0;
+                         cursor:pointer;font-size:15px;line-height:1">×</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="fraco" style="margin-top:0">Ainda não há foto nenhuma — sem
+      foto o Mercado Livre recusa o anúncio. Tire uma foto da peça abaixo.</p>
+  {% endif %}
+
+  <form method="post" action="/itens/{{ item['id'] }}/fotos"
+        enctype="multipart/form-data"
+        style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <input type="hidden" name="volta_para" value="preparar">
+    <input type="file" name="arquivos" accept="image/*" capture="environment"
+           multiple required style="font-size:15px">
+    <button class="secundario" type="submit"
+            style="font-size:15px;padding:11px 18px">
+      {{ 'Tirar/enviar outra foto' if fotos_proprias else 'Gerar foto própria (substitui a do site)' }}
+    </button>
+  </form>
+</div>
+
+<div class="card" style="{{ 'border-color:rgba(46,163,107,.5)' if pronto else '' }}">
+  {% if pronto %}
+    <h2>Pronto para publicar</h2>
+    <p class="fraco" style="font-size:13px;margin-top:0">
+      Isto cria um anúncio <strong>real</strong> no Mercado Livre, com o texto
+      e as fotos de cima.
+    </p>
+    <form method="post" action="/itens/{{ item['id'] }}/publicar-loja"
+          onsubmit="return confirm('Publicar este anúncio de verdade no Mercado Livre?')">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <button type="submit" style="font-size:16px;padding:12px 20px">
+        Publicar no Mercado Livre</button>
+    </form>
+  {% else %}
+    <h2>Falta foto para publicar</h2>
+    <p class="fraco" style="margin:0">Adicione ao menos uma foto acima — da
+      loja/site ou tirada por você — para poder publicar esta peça.</p>
+  {% endif %}
+</div>
+
+{% endblock %}

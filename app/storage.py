@@ -51,6 +51,12 @@ CREATE TABLE IF NOT EXISTS itens (
     atualizado_em TEXT
 );
 
+CREATE TABLE IF NOT EXISTS fontes_autorizadas (
+    dominio    TEXT PRIMARY KEY,
+    observacao TEXT,
+    criado_em  TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_itens_lote ON itens(lote_id);
 -- Impede republicar o mesmo SKU por engano em execuções repetidas.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_itens_sku_publicado
@@ -89,6 +95,12 @@ _MIGRACOES = {
         # chegar reclamação de imagem, dá para responder com precisão em vez
         # de adivinhar.
         "fonte_dados":        "TEXT",
+        # Título e descrição que o operador ajustou na tela de pré-anúncio.
+        # Quando preenchidos, valem sobre o título/descrição montados
+        # automaticamente — mas não sobre os que vêm do catálogo do ML, que
+        # não são nossos para editar.
+        "titulo_editado":     "TEXT",
+        "descricao_editada":  "TEXT",
     },
 }
 
@@ -371,7 +383,7 @@ def atualizar_dados_catalogo(item_id: int, **campos) -> None:
                   "catalog_atributos", "erro", "preco", "decidido_em",
                   "loja_url", "loja_nome", "loja_sku", "loja_preco",
                   "loja_fotos", "loja_descricao", "fonte_dados",
-                  "aplicacao", "marca"}
+                  "aplicacao", "marca", "titulo_editado", "descricao_editada"}
     campos = {k: v for k, v in campos.items() if k in permitidos}
     if not campos:
         return
@@ -565,3 +577,65 @@ def reabrir_item(item_id: int) -> bool:
 
 def _marcas(valores) -> str:
     return ",".join("?" for _ in valores)
+
+
+# ---------------------------------------------------------------------------
+# Fontes autorizadas a ceder imagem
+# ---------------------------------------------------------------------------
+
+def _normalizar_dominio(texto: str) -> str:
+    """Aceita domínio solto ou URL colada e devolve só o domínio."""
+    bruto = (texto or "").strip().lower()
+    if not bruto:
+        return ""
+    if "//" in bruto:
+        from urllib.parse import urlparse
+        bruto = urlparse(bruto).hostname or ""
+    bruto = bruto.split("/")[0].strip()
+    return bruto.removeprefix("www.")
+
+
+def listar_fontes() -> list[sqlite3.Row]:
+    with conexao() as conn:
+        return conn.execute(
+            "SELECT * FROM fontes_autorizadas ORDER BY dominio").fetchall()
+
+
+def autorizar_fonte(dominio: str, observacao: str = "") -> str:
+    """Autoriza um domínio a ceder imagem. Guardado no banco, não no deploy.
+
+    A Águia acrescenta marca representada o tempo todo. Se cada marca nova
+    exigisse mexer em variável de ambiente e refazer o deploy, na prática
+    ninguém acrescentaria — e a pessoa acabaria pulando peça que dava para
+    anunciar.
+    """
+    limpo = _normalizar_dominio(dominio)
+    if not limpo or "." not in limpo:
+        raise ValueError(
+            f"'{dominio}' não parece um endereço de site. Cole o domínio "
+            "(bosch.com.br) ou o link da página do produto.")
+
+    with conexao() as conn:
+        conn.execute(
+            """INSERT INTO fontes_autorizadas (dominio, observacao, criado_em)
+               VALUES (?, ?, ?)
+               ON CONFLICT(dominio) DO UPDATE SET
+                   observacao = COALESCE(NULLIF(excluded.observacao, ''),
+                                         fontes_autorizadas.observacao)""",
+            (limpo, observacao.strip()[:200],
+             datetime.now(timezone.utc).isoformat()))
+    return limpo
+
+
+def remover_fonte(dominio: str) -> None:
+    with conexao() as conn:
+        conn.execute("DELETE FROM fontes_autorizadas WHERE dominio = ?",
+                     (_normalizar_dominio(dominio),))
+
+
+def dominios_autorizados() -> set[str]:
+    """Domínios do banco. Erro de banco não pode virar liberação geral."""
+    try:
+        return {r["dominio"] for r in listar_fontes()}
+    except sqlite3.Error:
+        return set()

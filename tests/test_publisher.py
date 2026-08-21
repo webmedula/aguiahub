@@ -623,16 +623,55 @@ def test_nenhuma_tela_pede_a_palavra_publicar():
 # ---------------------------------------------------------------------------
 
 def test_publicacao_da_loja_manda_as_fotos_por_url():
-    """As fotos vão como `source`: o ML busca e processa em segundo plano.
+    """Sem foto própria, as fotos vão como `source`: o ML busca e processa em
+    segundo plano.
 
     Cheguei a trocar isso por download+upload achando que o firewall da loja
     tinha barrado o robô do ML. Estava errado — era só demora no
-    processamento. Este teste tranca o caminho certo.
+    processamento. Este teste tranca o caminho certo. A escolha de fonte da
+    foto foi para `_imagens_do_anuncio` (v0.23.0, pré-anúncio com troca de
+    foto), então é lá que o teste procura agora.
     """
     import inspect
     from app import publisher
-    fonte = inspect.getsource(publisher.publicar_da_loja)
+    fonte = inspect.getsource(publisher._imagens_do_anuncio)
     assert '{"source": url}' in fonte
+
+
+def test_foto_propria_substitui_a_do_site_na_publicacao(tmp_path, monkeypatch):
+    """Pedido do João: o pré-anúncio nasce com foto do site; foto própria
+    tirada depois passa a valer sozinha, não soma junto."""
+    import asyncio
+    import app.config as cfg
+    from app import fotos as mod_fotos
+    from app.publisher import _imagens_do_anuncio
+
+    monkeypatch.setattr(cfg.get_settings(), "data_dir", str(tmp_path))
+    mod_fotos.salvar(999, b"GIF89a" + b"\x00" * 20, "propria.gif")
+
+    class ClienteFalso:
+        async def enviar_foto(self, conteudo, nome):
+            return "MLB-FOTO-PROPRIA"
+
+    imagens = asyncio.run(_imagens_do_anuncio(
+        ClienteFalso(), 999, ["https://loja.aguiadiesel.com.br/a.jpg"]))
+    assert imagens == [{"id": "MLB-FOTO-PROPRIA"}]
+
+
+def test_sem_foto_propria_usa_a_do_site(tmp_path, monkeypatch):
+    import asyncio
+    import app.config as cfg
+    from app.publisher import _imagens_do_anuncio
+
+    monkeypatch.setattr(cfg.get_settings(), "data_dir", str(tmp_path))
+
+    class ClienteFalso:
+        async def enviar_foto(self, conteudo, nome):
+            raise AssertionError("não deveria subir foto própria nenhuma")
+
+    imagens = asyncio.run(_imagens_do_anuncio(
+        ClienteFalso(), 998, ["https://loja.aguiadiesel.com.br/a.jpg"]))
+    assert imagens == [{"source": "https://loja.aguiadiesel.com.br/a.jpg"}]
 
 
 def test_corrigir_fotos_recusa_item_que_nao_foi_publicado(tmp_path, monkeypatch):
@@ -709,3 +748,153 @@ def test_baixar_foto_recusa_resposta_que_nao_e_imagem():
         assert "não devolveu imagem" in str(erro.value)
     finally:
         httpx.AsyncClient = original
+
+
+# ---------------------------------------------------------------------------
+# Tela de pré-anúncio (v0.23.0)
+# ---------------------------------------------------------------------------
+
+def test_aplicar_pesquisa_leva_para_a_tela_de_preparar(tmp_path, monkeypatch):
+    """Bug relatado pelo João: 'aproveitar os dados técnicos' voltava para a
+    fila (que mostra a peça de MAIOR valor pendente, não necessariamente a
+    mesma) e parecia não levar a lugar nenhum. Agora vai direto para a tela
+    de pré-anúncio DESTA peça."""
+    from fastapi.testclient import TestClient
+    from app import main, publisher
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+
+    async def falsa_pesquisa(item_id, url):
+        return {"ok": True, "dados": object(), "item": storage.item(item_id),
+                "confere_codigo": True}
+
+    monkeypatch.setattr(main, "pesquisar_em_site", falsa_pesquisa)
+    monkeypatch.setattr(main, "aplicar_dados_da_pesquisa",
+                        lambda item_id, dados: {"ok": True, "campos": {}})
+
+    cli = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    r = cli.post(f"/itens/{ids[0]}/aplicar-pesquisa",
+                 data={"url": "https://x.com/p", "lote_id": lote_id})
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/itens/{ids[0]}/preparar?lote_id={lote_id}"
+
+
+def test_usar_ficha_tambem_leva_para_preparar(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+
+    async def falsa_pesquisa(item_id, url):
+        return {"ok": True, "dados": object(), "item": storage.item(item_id),
+                "confere_codigo": True}
+
+    monkeypatch.setattr(main, "pesquisar_em_site", falsa_pesquisa)
+    monkeypatch.setattr(main, "usar_ficha_da_pesquisa",
+                        lambda item_id, dados: {"ok": True, "fotos": 2,
+                                                "mensagem": "ok"})
+
+    cli = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    r = cli.post(f"/itens/{ids[0]}/usar-ficha",
+                 data={"url": "https://x.com/p", "lote_id": lote_id})
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/itens/{ids[0]}/preparar?lote_id={lote_id}"
+
+
+def test_tela_preparar_mostra_titulo_e_descricao_padrao(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(
+        ids[0], status="pronto_com_fotos", loja_nome="Peça da Loja X",
+        loja_fotos='["https://loja.aguiadiesel.com.br/a.jpg"]')
+
+    cli = TestClient(main.app, base_url="https://testserver")
+    r = cli.get(f"/itens/{ids[0]}/preparar", params={"lote_id": lote_id})
+    assert r.status_code == 200
+    assert "Peça da Loja X" in r.text
+    assert "Pronto para publicar" in r.text
+
+
+def test_tela_preparar_sem_foto_nenhuma_avisa_e_nao_deixa_publicar(tmp_path,
+                                                                   monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    cli = TestClient(main.app, base_url="https://testserver")
+    r = cli.get(f"/itens/{ids[0]}/preparar", params={"lote_id": lote_id})
+    assert r.status_code == 200
+    assert "Falta foto para publicar" in r.text
+
+
+def test_salvar_preparo_grava_titulo_e_descricao_editados(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    cli = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    r = cli.post(f"/itens/{ids[0]}/preparar",
+                 data={"lote_id": lote_id, "titulo": "Título Ajustado",
+                       "descricao": "Descrição escrita pelo operador."})
+    assert r.status_code == 303
+
+    item = storage.item(ids[0])
+    assert item["titulo_editado"] == "Título Ajustado"
+    assert item["descricao_editada"] == "Descrição escrita pelo operador."
+
+
+def test_remover_foto_do_site_tira_da_lista(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(
+        ids[0], loja_fotos='["https://x.com/a.jpg", "https://x.com/b.jpg"]')
+
+    cli = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    r = cli.post(f"/itens/{ids[0]}/loja-fotos/remover",
+                 data={"lote_id": lote_id, "url": "https://x.com/a.jpg"})
+    assert r.status_code == 303
+
+    import json as _json
+    restantes = _json.loads(storage.item(ids[0])["loja_fotos"])
+    assert restantes == ["https://x.com/b.jpg"]
+
+
+def test_titulo_e_descricao_editados_valem_na_publicacao_da_loja(tmp_path,
+                                                                 monkeypatch):
+    """O título e a descrição salvos na tela de pré-anúncio têm prioridade
+    sobre o que seria montado automaticamente."""
+    import asyncio
+    from app import publisher
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(
+        ids[0], status="pronto_com_fotos",
+        loja_fotos='["https://loja.aguiadiesel.com.br/a.jpg"]',
+        loja_nome="Nome Original da Loja",
+        titulo_editado="Título Que O João Escreveu",
+        descricao_editada="Descrição que o João escreveu.",
+        catalog_category_id="MLB1747",
+    )
+
+    capturado = {}
+
+    class ClienteFalso:
+        async def post(self, caminho, corpo=None):
+            if caminho == "/items":
+                capturado["payload"] = corpo
+                return {"id": "MLB999", "permalink": "https://x"}
+            if caminho.endswith("/description"):
+                capturado["descricao"] = corpo["plain_text"]
+                return {}
+            raise AssertionError(caminho)
+
+    monkeypatch.setattr(publisher, "MLClient", lambda *a, **k: ClienteFalso())
+    r = asyncio.run(publisher.publicar_da_loja(ids[0]))
+
+    assert r["ok"] is True
+    assert capturado["payload"]["family_name"] == "Título Que O João Escreveu"
+    assert capturado["descricao"] == "Descrição que o João escreveu."

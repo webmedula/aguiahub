@@ -83,9 +83,10 @@
 <div class="card" style="border-color:rgba(46,163,107,.4)">
   <h2>Fotos de {{ dados.dominio }}</h2>
   <p class="fraco" style="font-size:13px;margin-top:0">
-    Este domínio está na sua lista de fontes autorizadas
-    (<code>FONTES_IMAGEM_AUTORIZADAS</code>) — ou seja, você declarou ter
-    direito de usar este material.
+    Este domínio está na sua lista de fontes autorizadas — ou seja, você
+    declarou ter direito de usar este material. Por isso a ficha, as fotos
+    <strong>e a descrição</strong> abaixo podem ser aproveitadas; dá para
+    editar tudo antes de publicar, na tela de pré-anúncio.
   </p>
   <div style="display:flex;gap:10px;flex-wrap:wrap">
     {% for f in dados.fotos[:6] %}
@@ -103,22 +104,42 @@
     então elas não são aproveitadas.</p>
   <p class="fraco" style="font-size:13px">
     Foto de site alheio é obra protegida: usar sem direito derruba anúncio por
-    denúncia e arrisca a conta da Águia Parts. Se este é um fornecedor de quem
-    você tem direito de usar o material, acrescente
-    <code>{{ dados.dominio }}</code> em <code>FONTES_IMAGEM_AUTORIZADAS</code>
-    no EasyPanel. Senão, o caminho da foto é a loja da Águia ou a câmera.
+    denúncia e arrisca a conta da Águia Parts. Se a Águia representa esta marca
+    e tem direito sobre o material, autorize o site aqui — vale para todas as
+    peças dele daqui em diante.
   </p>
+  <form method="post" action="/fontes"
+        style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <input type="hidden" name="dominio" value="{{ dados.dominio }}">
+    <input type="hidden" name="voltar_para" value="/fila/{{ lote_id }}">
+    <div style="flex:1;min-width:240px">
+      <label for="obs">Marca ou observação (opcional)</label>
+      <input id="obs" name="observacao" placeholder="{{ dados.marca }} — distribuidor oficial"
+             style="width:100%;padding:10px">
+    </div>
+    <button class="secundario" type="submit" style="padding:11px 18px">
+      Autorizar {{ dados.dominio }}</button>
+  </form>
 </div>
 {% endif %}
 
 {% if dados.descricao_referencia %}
 <div class="card">
+  {% if dados.fonte_autorizada %}
+  <h2>Descrição de {{ dados.dominio }} <span class="fraco" style="font-weight:400">·
+      pode virar o texto do anúncio, editável</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    O domínio está autorizado, então este texto entra como ponto de partida
+    do anúncio — revise antes de publicar, na tela de pré-anúncio.
+  </p>
+  {% else %}
   <h2>Descrição do site <span class="fraco" style="font-weight:400">·
       referência, não vai para o anúncio</span></h2>
   <p class="fraco" style="font-size:13px;margin-top:0">
     Serve para você conferir se é a peça certa. O texto do anúncio é montado a
-    partir dos dados da Águia — texto de site alheio tem dono.
+    partir dos dados da Águia — texto de site não autorizado tem dono.
   </p>
+  {% endif %}
   <div style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
               padding:14px;font-size:13px;max-height:260px;overflow-y:auto;
               white-space:pre-wrap">{{ dados.descricao_referencia }}</div>
@@ -137,13 +158,17 @@
     <div class="fraco" style="font-size:13px">
       {% if dados.fotos %}
         <strong>Usar a ficha e as fotos</strong> deixa a peça pronta para
-        anunciar. Fica gravado que as imagens vieram de
-        <code>{{ dados.dominio }}</code>, para dar para rastrear depois.
-        O texto do anúncio continua sendo montado a partir dos dados da Águia.
+        anunciar, com as {{ dados.fotos|length }} foto(s) de
+        <code>{{ dados.dominio }}</code>{% if dados.descricao_referencia %}
+        e a descrição dele{% endif %} — fica tudo editável na tela de
+        pré-anúncio antes de publicar. Fica gravado de onde veio, para dar
+        para rastrear depois.
       {% else %}
         Aproveitar guarda na peça a <strong>aplicação</strong> e a
-        <strong>marca</strong> que faltavam — isso melhora o título e a ficha
-        do anúncio.
+        <strong>marca</strong> que faltavam{% if dados.fonte_autorizada and
+        dados.descricao_referencia %}, e leva também a descrição do site
+        (é autorizado) como ponto de partida editável{% endif %}. Ainda vai
+        faltar foto — a tela de pré-anúncio deixa tirar uma.
       {% endif %}
     </div>
   </div>

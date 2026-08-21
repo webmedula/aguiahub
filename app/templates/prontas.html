@@ -124,8 +124,12 @@
       </td>
       <td class="num">R$ {{ '%.2f'|format(it['preco'] or 0) }}</td>
       <td class="num">{{ it['quantidade'] or 1 }}</td>
-      <td><a href="/itens/{{ it['id'] }}/testar" style="font-size:12px"
-             >testar</a></td>
+      <td>
+        <a href="/itens/{{ it['id'] }}/preparar?lote_id={{ lote_id }}"
+           style="font-size:12px">editar</a>
+        · <a href="/itens/{{ it['id'] }}/testar" style="font-size:12px"
+             >testar</a>
+      </td>
     </tr>
     {% endfor %}
   </table>
