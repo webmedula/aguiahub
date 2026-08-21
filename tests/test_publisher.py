@@ -37,9 +37,15 @@ def test_catalogo_nao_envia_titulo_nem_atributos():
     assert p["pictures"] == []
 
 
-def test_anuncio_proprio_leva_titulo_e_atributos():
+def test_anuncio_proprio_leva_family_name_e_atributos():
+    """No modelo User Product o nome vai em family_name, não em title.
+
+    Erro real do ML na segunda camada da validação:
+    'The fields [title] are invalid for requested call.'
+    """
     p = montar_payload(item(), 100.0, category_id="MLB1747")
-    assert p["title"]
+    assert p["family_name"]
+    assert "title" not in p
     ids = {a["id"] for a in p["attributes"]}
     assert {"BRAND", "PART_NUMBER", "SELLER_SKU"} <= ids
 
@@ -271,17 +277,25 @@ def test_publicar_sem_selecionar_nada_nao_chama_o_ml(tmp_path, monkeypatch):
     assert r["resultados"] == []
 
 
-def test_rota_de_publicar_exige_a_palavra_publicar(tmp_path, monkeypatch):
-    """Sem digitar PUBLICAR, nada sai — a conta é real."""
+def test_publicar_sem_conta_conectada_nao_muda_nada(tmp_path, monkeypatch):
+    """Sem conta do ML conectada, a rota recusa e o item fica intacto.
+
+    Este teste substituiu o que exigia a palavra PUBLICAR digitada (removida
+    na v0.17.0 a pedido do João). Registro aqui porque o teste antigo passou a
+    passar pelo motivo errado: ele batia no 400 de "conecte a conta", não no
+    da confirmação, e teria continuado verde mesmo com a trava toda aberta.
+    """
     from fastapi.testclient import TestClient
     from app.main import app
     storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
     storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    storage.desconectar()
 
     cli = TestClient(app, base_url="https://testserver")
     r = cli.post(f"/lotes/{lote_id}/publicar-selecionadas",
-                 data={"ids": [ids[0]], "confirmacao": "sim"})
+                 data={"ids": [ids[0]]})
     assert r.status_code == 400
+    assert "Mercado Livre" in r.text
     assert storage.item(ids[0])["status"] == "pronto_com_fotos"
 
 
@@ -537,3 +551,68 @@ def test_nao_selecionadas_podem_ser_trazidas_para_a_fila(tmp_path, monkeypatch):
     assert [f["id"] for f in storage.itens_fora_da_fila(lote_id)] == [ids[0]]
     assert storage.reabrir_item(ids[0]) is True
     assert storage.item(ids[0])["status"] == "na_fila"
+
+
+def test_title_e_removido_quando_vai_family_name():
+    """Regressão da cascata de validação do ML.
+
+    Rodada 1: 'does not contains ... [family_name]'  -> passei a mandar.
+    Rodada 2: 'The fields [title] are invalid'       -> tem que parar de mandar.
+    """
+    from app.publisher import aplicar_user_product
+    payload = {"title": "Bico Injetor Ranger", "attributes": []}
+    aplicar_user_product(payload, "Bico Injetor Ranger")
+    assert "title" not in payload
+    assert payload["family_name"] == "Bico Injetor Ranger"
+
+
+def test_family_name_aproveita_o_title_quando_nao_vem_titulo():
+    from app.publisher import aplicar_user_product
+    payload = {"title": "Módulo de Injeção Fiat Toro"}
+    aplicar_user_product(payload, "")
+    assert payload["family_name"] == "Módulo de Injeção Fiat Toro"
+
+
+def test_catalogo_continua_com_title_ausente_e_sem_family_name():
+    p = montar_payload(item(), 100.0, catalog_product_id="MLB123",
+                       category_id="MLB1747")
+    assert "title" not in p and "family_name" not in p
+
+
+def test_publicar_com_conta_conectada_nao_pede_mais_confirmacao(tmp_path,
+                                                                monkeypatch):
+    """v0.17.0: o botão publica direto, sem campo de texto."""
+    from datetime import datetime, timezone, timedelta
+    from fastapi.testclient import TestClient
+    from app.ml.oauth import TokenBundle
+    import app.main as main
+
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    storage.salvar_token(TokenBundle(
+        access_token="t", refresh_token="r", user_id=1,
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=5),
+        scope=""), "aguia")
+
+    chamou = {}
+
+    async def falso_publicar(ids_, *a, **kw):
+        chamou["ids"] = ids_
+        return {"ok": True, "publicados": 1, "falharam": 0,
+                "mensagem": "1 anúncio(s) publicado(s).", "resultados": []}
+
+    monkeypatch.setattr(main, "publicar_selecionados", falso_publicar)
+    cli = TestClient(app=main.app, base_url="https://testserver")
+    r = cli.post(f"/lotes/{lote_id}/publicar-selecionadas", data={"ids": [ids[0]]})
+
+    assert r.status_code == 200
+    assert chamou["ids"] == [ids[0]]
+
+
+def test_nenhuma_tela_pede_a_palavra_publicar():
+    """Garante que não sobrou campo de confirmação em template nenhum."""
+    from pathlib import Path
+    pasta = Path(__file__).resolve().parent.parent / "app" / "templates"
+    for arquivo in pasta.glob("*.html"):
+        texto = arquivo.read_text(encoding="utf-8")
+        assert 'name="confirmacao"' not in texto, arquivo.name

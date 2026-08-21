@@ -134,7 +134,17 @@ def aplicar_user_product(payload: dict, titulo: str) -> dict:
         return payload
 
     s = get_settings()
-    payload.setdefault("family_name", (titulo or "").strip()[:FAMILY_NAME_MAX])
+    titulo = (titulo or payload.get("title") or "").strip()
+    payload.setdefault("family_name", titulo[:FAMILY_NAME_MAX])
+
+    # No modelo User Product o título NÃO é enviado: o ML monta o título do
+    # anúncio a partir do family_name e dos atributos. Mandar os dois é erro:
+    #
+    #     The fields [title] are invalid for requested call.
+    #
+    # Foi a segunda camada da cascata de validação — a primeira cobrou o
+    # family_name, a segunda recusou o title que continuava indo junto.
+    payload.pop("title", None)
 
     termos = {t.get("id") for t in payload.get("sale_terms", [])}
     sale_terms = list(payload.get("sale_terms", []))

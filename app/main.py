@@ -474,8 +474,10 @@ async def publicar_selecionadas(request: Request, lote_id: int,
     """Publica no Mercado Livre as peças marcadas. Cria anúncios REAIS."""
     if not storage.lote(lote_id):
         raise HTTPException(404, "Lote não encontrado.")
-    if confirmacao.strip().upper() != "PUBLICAR":
-        raise HTTPException(400, "Digite PUBLICAR para confirmar a publicação.")
+    # A confirmação digitada saiu a pedido do João (v0.17.0): na prática ele
+    # digitava "publicar" em toda peça e a fricção só atrasava. O parâmetro
+    # continua aceito para não quebrar link antigo, mas não é mais exigido.
+    # A proteção que resta é o aviso na tela e o confirm do navegador.
     if not storage.carregar_token():
         raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
 
@@ -551,13 +553,10 @@ async def vincular_loja(item_id: int, referencia: str = Form(...),
 @app.post("/itens/{item_id}/publicar-loja")
 async def publicar_item_da_loja(item_id: int, lote_id: int = Form(...),
                                 confirmacao: str = Form("")):
-    """Cria o anúncio no ML com as fotos da loja. Exige confirmação digitada."""
+    """Cria o anúncio no ML com as fotos da loja. Cria anúncio REAL."""
     if not storage.carregar_token():
         raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
-    if confirmacao.strip().upper() != "PUBLICAR":
-        raise HTTPException(400, (
-            "Para publicar de verdade, digite PUBLICAR no campo de confirmação. "
-            "Esta ação cria um anúncio real na conta da Águia Parts."))
+    # Confirmação digitada removida a pedido do João (v0.17.0).
 
     resultado = await publicar_da_loja(item_id)
     if not resultado["ok"]:
@@ -612,10 +611,7 @@ async def publicar_com_foto(item_id: int, lote_id: int = Form(...),
                             confirmacao: str = Form("")):
     if not storage.carregar_token():
         raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
-    if confirmacao.strip().upper() != "PUBLICAR":
-        raise HTTPException(400, (
-            "Para publicar de verdade, digite PUBLICAR no campo de confirmação. "
-            "Esta ação cria um anúncio real na conta da Águia Parts."))
+    # Confirmação digitada removida a pedido do João (v0.17.0).
     resultado = await publicar_com_fotos_proprias(item_id)
     if not resultado["ok"]:
         raise HTTPException(400, resultado["mensagem"])
@@ -715,15 +711,10 @@ async def vincular_ml(item_id: int, referencia: str = Form(...),
 async def publicar(request: Request, lote_id: int,
                    aprovados: list[int] = Form(default=[]),
                    confirmacao: str = Form("")):
-    """Publica de verdade. Exige a palavra PUBLICAR digitada pelo operador."""
+    """Publica de verdade — cria anúncios REAIS na conta da Águia Parts."""
     if not storage.carregar_token():
         raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
-    if confirmacao.strip().upper() != "PUBLICAR":
-        raise HTTPException(
-            400,
-            "Confirmação incorreta. Digite PUBLICAR no campo para confirmar — "
-            "esta ação cria anúncios reais na sua conta do Mercado Livre."
-        )
+    # Confirmação digitada removida a pedido do João (v0.17.0).
     if not aprovados:
         raise HTTPException(400, "Nenhum item aprovado. Marque ao menos um.")
 

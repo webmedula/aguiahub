@@ -154,16 +154,12 @@
     Ao publicar, o anúncio vai com <strong>as fotos e a descrição da loja da
     Águia</strong>, o preço de R$ {{ '%.2f'|format(item['preco'] or 0) }} e
     {{ item['quantidade'] }} unidade(s). Isso cria um anúncio REAL no Mercado
-    Livre. Digite PUBLICAR para confirmar.
+    Livre.
   </div>
   <form method="post" action="/itens/{{ item['id'] }}/publicar-loja"
+        onsubmit="return confirm('Publicar este anúncio de verdade no Mercado Livre?')"
         style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
-    <div>
-      <label>Confirmação</label>
-      <input type="text" name="confirmacao" placeholder="digite PUBLICAR"
-             autocomplete="off" required style="font-size:16px;padding:11px">
-    </div>
     <button type="submit" style="font-size:16px;padding:12px 20px">
       Publicar no Mercado Livre</button>
   </form>
@@ -234,13 +230,9 @@
     unidade(s). Isso cria um anúncio REAL no Mercado Livre.
   </div>
   <form method="post" action="/itens/{{ item['id'] }}/publicar-fotos"
+        onsubmit="return confirm('Publicar este anúncio de verdade no Mercado Livre?')"
         style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
     <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
-    <div>
-      <label>Confirmação</label>
-      <input type="text" name="confirmacao" placeholder="digite PUBLICAR"
-             autocomplete="off" required style="font-size:16px;padding:11px">
-    </div>
     <button type="submit" style="font-size:16px;padding:12px 20px">
       Publicar no Mercado Livre</button>
   </form>

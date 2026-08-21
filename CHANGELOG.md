@@ -5,6 +5,43 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.17.0 — 21/08/2026
+
+**A terceira camada da validação do ML: o título não vai mais.**
+
+A resposta do validador foi clara onde as anteriores não eram:
+
+    The fields [title] are invalid for requested call.
+
+No modelo **User Product**, o Mercado Livre monta o título do anúncio a partir
+do `family_name` e dos atributos. Mandar `title` junto é erro. A cascata foi:
+
+1. `[family_name]` faltando → passei a mandar (v0.14.0).
+2. `[title]` inválido → tenho que parar de mandar (agora).
+
+O `title` some do payload de anúncio próprio; o texto que ele levava passa a
+ir no `family_name`. Publicação por catálogo não muda — lá nunca houve
+`title` nem `family_name`.
+
+**Publicar virou um clique só.** A pedido do João, o campo onde era preciso
+digitar `PUBLICAR` saiu de todas as telas. Fica o aviso do que vai acontecer
+e a confirmação do navegador. Vale registrar o que isso significa: a aplicação
+está numa URL pública **sem senha**, e agora quem tiver o endereço publica
+anúncios reais na conta da Águia Parts em dois cliques. Se em algum momento
+quiser fechar, basta definir `APP_PASSWORD` no EasyPanel — o mecanismo já
+existe e está desligado.
+
+**Um teste que passava pelo motivo errado.** O que verificava a exigência da
+palavra `PUBLICAR` batia, na verdade, no erro de "conecte a conta" — ele
+teria continuado verde mesmo com a trava toda aberta. Substituído por dois
+que checam o que importa agora: sem conta conectada nada é publicado, e com
+conta conectada o botão publica direto. Mais um que varre os templates
+garantindo que nenhum campo de confirmação sobrou por engano.
+
+Cinco testes novos, 128 no total.
+
+---
+
 ## v0.16.0 — 21/08/2026
 
 **"Não sei quais peças já foram decididas, e não tenho como revisar."**

@@ -134,15 +134,10 @@
 <div class="card" style="border-color:rgba(208,69,63,.35)">
   <h2>Publicar de verdade no Mercado Livre</h2>
   <p class="fraco" style="font-size:13px;margin-top:0">
-    Isto cria anúncios reais na conta da Águia Parts, com preço e estoque da
-    planilha. Para confirmar, digite <strong>PUBLICAR</strong> abaixo.</p>
-  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-    <div>
-      <label for="senha">Confirmação</label>
-      <input id="senha" name="confirmacao" autocomplete="off" placeholder="PUBLICAR">
-    </div>
-    <button type="submit">Publicar selecionadas</button>
-  </div>
+    Isto cria anúncios <strong>reais</strong> na conta da Águia Parts, com o
+    preço e o estoque da planilha.</p>
+  <button type="submit" style="font-size:16px;padding:12px 20px">
+    Publicar selecionadas</button>
 </div>
 </form>
 
@@ -157,10 +152,6 @@ function atualiza(){
     n ? n + ' selecionada(s)' : '';
 }
 function confereSenha(f){
-  if (f.confirmacao.value.trim().toUpperCase() !== 'PUBLICAR'){
-    alert('Digite PUBLICAR no campo de confirmação.');
-    return false;
-  }
   const n = document.querySelectorAll('.sel:checked').length;
   if (!n){ alert('Marque ao menos uma peça.'); return false; }
   return confirm('Publicar ' + n + ' anúncio(s) reais no Mercado Livre?');
