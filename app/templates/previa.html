@@ -41,6 +41,28 @@
   </p>
 </div>
 
+<div class="card" style="border-color:{{ 'rgba(46,163,107,.45)'
+     if selecao.tem_coluna else 'rgba(200,146,42,.35)' }}">
+  <h2>Escolher as peças pela planilha</h2>
+  {% if selecao.tem_coluna %}
+    <p style="margin:0">Achei a coluna de seleção:
+      <strong>{{ selecao.marcadas }}</strong> de {{ selecao.total }} linha(s)
+      marcadas. Só elas entram na fila de trabalho.</p>
+    <p class="fraco" style="font-size:13px;margin-bottom:0">As não marcadas
+      ficam guardadas — dá para trazer qualquer uma para a fila depois, sem
+      reenviar a planilha.</p>
+  {% else %}
+    <p style="margin:0">Esta planilha não tem coluna de seleção, então
+      <strong>todas as {{ selecao.total }} linhas</strong> entram na fila.</p>
+    <p class="fraco" style="font-size:13px;margin-bottom:0">
+      Se preferir escolher você mesmo quais peças trabalhar: acrescente na
+      planilha uma coluna chamada <code>Anunciar</code> (ou
+      <code>Publicar</code>, <code>Selecionar</code>) e marque com
+      <code>x</code> as linhas que quer. Vale também <code>sim</code>,
+      <code>1</code> ou <code>ok</code>. Aí só as marcadas entram.</p>
+  {% endif %}
+</div>
+
 <div class="card">
   <h2>Linhas <span class="fraco">(primeiras {{ linhas | length }})</span></h2>
   <table>

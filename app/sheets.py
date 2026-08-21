@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import io
+import unicodedata
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,16 @@ COLUNAS = {
 
 OBRIGATORIAS = ["Cód", "Descrição", "Qtd"]
 
+# Coluna opcional pela qual o João escolhe, na própria planilha, quais peças
+# entram na fila. Quem conhece o estoque é ele; o sistema não tem como saber
+# que uma peça de R$ 20 mil é encalhe insalvável e outra de R$ 300 vende toda
+# semana. Se a coluna não existir, a fila continua vindo inteira.
+COLUNAS_SELECAO = {"ANUNCIAR", "PUBLICAR", "SELECIONAR", "SELECIONADO",
+                   "MARCAR", "SUBIR", "FILA", "X", "OK"}
+
+#: Valores que contam como "sim" na coluna de seleção.
+MARCAS_SIM = {"X", "S", "SIM", "1", "OK", "V", "TRUE", "VERDADEIRO", "Y", "YES"}
+
 # Marcas genéricas do ERP que não agregam nada ao título do anúncio
 MARCAS_IGNORADAS = {"OUTRAS MARCAS", "DIVERSOS", "SEM MARCA", "", "GERAL"}
 
@@ -56,6 +67,8 @@ class LinhaProduto:
     preco_publico: float = 0.0
     custo_medio: float = 0.0
     pct_desconto: float = 0.0
+    #: None = a planilha não tem coluna de seleção. True/False = marcada ou não.
+    selecionada: bool | None = None
     problemas: list[str] = field(default_factory=list)
 
     @property
@@ -195,6 +208,48 @@ def _ler_abas(caminho: str | Path) -> list[tuple[str, list[list]]]:
     )
 
 
+def _achar_coluna_selecao(cabecalho: list[str]) -> int | None:
+    """Acha a coluna pela qual o operador escolhe as peças, se existir.
+
+    Compara sem acento e sem maiúscula para aceitar 'Anunciar', 'ANUNCIAR',
+    'Selecionar' — é uma coluna que a pessoa digita à mão, não vale ser
+    exigente com a grafia.
+    """
+    for i, nome in enumerate(cabecalho):
+        limpo = _sem_acento(nome).strip().upper()
+        if limpo in COLUNAS_SELECAO:
+            return i
+    return None
+
+
+def _sem_acento(texto: str) -> str:
+    t = unicodedata.normalize("NFKD", str(texto or ""))
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def _ler_selecao(linha: list, coluna: int | None) -> bool | None:
+    """None se a planilha não tem coluna de seleção; senão True/False."""
+    if coluna is None:
+        return None
+    valor = linha[coluna] if coluna < len(linha) else None
+    if valor in (None, ""):
+        return False
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, (int, float)):
+        return float(valor) != 0
+    return _sem_acento(str(valor)).strip().upper() in MARCAS_SIM
+
+
+def resumo_da_selecao(itens: list["LinhaProduto"]) -> dict:
+    """Diz se a planilha traz coluna de seleção e quantas linhas foram marcadas."""
+    com_coluna = [i for i in itens if i.selecionada is not None]
+    if not com_coluna:
+        return {"tem_coluna": False, "marcadas": 0, "total": len(itens)}
+    marcadas = [i for i in com_coluna if i.selecionada]
+    return {"tem_coluna": True, "marcadas": len(marcadas), "total": len(itens)}
+
+
 def ler_planilha(caminho: str | Path, abas: list[str] | None = None) -> list[LinhaProduto]:
     """Lê a planilha e devolve as linhas já validadas.
 
@@ -215,6 +270,8 @@ def ler_planilha(caminho: str | Path, abas: list[str] | None = None) -> list[Lin
         if faltando:
             # aba com layout diferente do esperado: ignora em vez de quebrar
             continue
+
+        col_selecao = _achar_coluna_selecao(cabecalho)
 
         def pegar(linha: list, nome_col: str):
             i = indice.get(nome_col)
@@ -238,6 +295,7 @@ def ler_planilha(caminho: str | Path, abas: list[str] | None = None) -> list[Lin
                 preco_publico=_num(pegar(linha, "PRECO_PUBLICO_ATUAL")),
                 custo_medio=_num(pegar(linha, "CUSTO_MEDIO")),
                 pct_desconto=_num(pegar(linha, "PCT_DESCONTO")),
+                selecionada=_ler_selecao(linha, col_selecao),
             )
 
             if not p.codigo:

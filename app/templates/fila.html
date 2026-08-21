@@ -53,12 +53,16 @@
               display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     {% for chave, rotulo in rotulos.items() %}
       {% if progresso.get(chave, {}).get('itens') %}
-      <span style="font-size:12px;background:#11141a;border:1px solid #232833;
-                   border-radius:20px;padding:5px 12px">
+      <a href="/lotes/{{ lote['id'] }}/decididas?status={{ chave }}"
+         style="font-size:12px;background:#11141a;border:1px solid #232833;
+                border-radius:20px;padding:5px 12px;text-decoration:none;
+                color:var(--txt)">
         <strong>{{ progresso[chave]['itens'] }}</strong> {{ rotulo }}
-      </span>
+      </a>
       {% endif %}
     {% endfor %}
+    <a href="/lotes/{{ lote['id'] }}/decididas" style="font-size:12px"
+       >ver todas e rever &rarr;</a>
   </div>
   {% endif %}
 </div>

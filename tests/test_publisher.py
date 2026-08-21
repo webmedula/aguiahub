@@ -458,3 +458,82 @@ def test_teste_nao_publica_nada(tmp_path, monkeypatch):
     assert r["validacao"]["ok"] is True
     assert ("POST", "/items") not in chamadas
     assert storage.item(ids[0])["status"] == "pronto_com_fotos"
+
+
+# ---------------------------------------------------------------------------
+# Histórico e revisão de decisões (v0.16.0)
+# ---------------------------------------------------------------------------
+
+def test_historico_lista_o_que_foi_decidido(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="nao_encontrado")
+    storage.atualizar_dados_catalogo(ids[1], status="pronto_com_fotos")
+
+    decididas = storage.itens_decididos(lote_id)
+    assert {d["id"] for d in decididas} == {ids[0], ids[1]}
+
+
+def test_historico_nao_traz_quem_esta_na_fila_nem_fora_dela(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="sem_dado")
+    storage.atualizar_dados_catalogo(ids[1], status="nao_selecionado")
+    assert storage.itens_decididos(lote_id) == []
+
+
+def test_historico_filtra_por_situacao_e_por_busca(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="erro")
+    storage.atualizar_dados_catalogo(ids[1], status="nao_encontrado")
+
+    assert len(storage.itens_decididos(lote_id, status="erro")) == 1
+    achados = storage.itens_decididos(lote_id, busca="cod0")
+    assert achados and achados[0]["id"] == ids[0]
+
+
+def test_rever_devolve_a_peca_para_a_fila(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="nao_encontrado",
+                                     erro="operador não achou")
+    assert storage.reabrir_item(ids[0]) is True
+
+    item = storage.item(ids[0])
+    assert item["status"] == "na_fila"
+    assert item["decidido_em"] is None
+    assert item["erro"] is None
+
+
+def test_rever_preserva_o_que_ja_tinha_sido_descoberto(tmp_path, monkeypatch):
+    """Refazer a busca à toa seria castigo, não correção."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos",
+                                     loja_nome="PEÇA X",
+                                     loja_fotos='["https://x/a.jpg"]')
+    storage.reabrir_item(ids[0])
+    item = storage.item(ids[0])
+    assert item["loja_nome"] == "PEÇA X"
+    assert item["loja_fotos"] == '["https://x/a.jpg"]'
+
+
+def test_peca_publicada_nao_pode_ser_revertida(tmp_path, monkeypatch):
+    """Desfazer aqui não apaga o anúncio no ML — a tela mentiria."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_item(ids[0], status="publicado", ml_item_id="MLB1")
+    assert storage.reabrir_item(ids[0]) is False
+    assert storage.item(ids[0])["status"] == "publicado"
+
+
+def test_peca_pulada_volta_com_valor_positivo(tmp_path, monkeypatch):
+    """'Pular' negativa o valor para ir ao fim da fila; rever tem que desfazer."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.adiar_item(ids[0])
+    assert storage.item(ids[0])["valor"] < 0
+    storage.reabrir_item(ids[0])
+    assert storage.item(ids[0])["valor"] > 0
+
+
+def test_nao_selecionadas_podem_ser_trazidas_para_a_fila(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="nao_selecionado")
+    assert [f["id"] for f in storage.itens_fora_da_fila(lote_id)] == [ids[0]]
+    assert storage.reabrir_item(ids[0]) is True
+    assert storage.item(ids[0])["status"] == "na_fila"

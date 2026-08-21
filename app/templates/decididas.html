@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block titulo %}Peças já decididas{% endblock %}
+{% block conteudo %}
+
+{% set rotulos = {
+  'pronto_com_fotos':     ('pronta · foto da loja',   'ok'),
+  'foto_do_operador':     ('pronta · foto do estoque','ok'),
+  'aguardando_aprovacao': ('pronta · catálogo do ML', 'ok'),
+  'publicado':            ('publicada no ML',         'ok'),
+  'nao_encontrado':       ('não achei',               'neutro'),
+  'em_duvida':            ('separada para o João',    'alerta'),
+  'sem_catalogo':         ('sem catálogo',            'neutro'),
+  'catalogo_inativo':     ('catálogo inativo',        'neutro'),
+  'sugestao_duvidosa':    ('sugestão duvidosa',       'alerta'),
+  'sem_categoria':        ('sem categoria',           'neutro'),
+  'ignorado':             ('ignorada',                'neutro'),
+  'erro':                 ('erro',                    'erro'),
+} %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Peças já decididas</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ itens|length }} listada(s){% if filtro or busca %} com este filtro{% endif %}
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+<div class="card">
+  <form method="get" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+    <div>
+      <label for="busca">Procurar por código ou descrição</label>
+      <input id="busca" name="busca" value="{{ busca }}" placeholder="ex.: CD110087">
+    </div>
+    <div>
+      <label for="status">Situação</label>
+      <select id="status" name="status">
+        <option value="">todas</option>
+        {% for chave, r in rotulos.items() %}
+          {% if contagem.get(chave) %}
+          <option value="{{ chave }}" {{ 'selected' if filtro == chave }}
+            >{{ r[0] }} ({{ contagem[chave] }})</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit">Filtrar</button>
+    {% if filtro or busca %}
+      <a class="fraco" style="font-size:13px"
+         href="/lotes/{{ lote_id }}/decididas">limpar</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if not itens %}
+<div class="card" style="text-align:center;padding:40px">
+  <p class="fraco" style="margin:0">Nenhuma peça decidida{% if filtro or busca
+    %} com esse filtro{% endif %} ainda.</p>
+</div>
+{% else %}
+<div class="card">
+  <table>
+    <tr>
+      <th>Peça</th>
+      <th>Situação</th>
+      <th>Decidida em</th>
+      <th class="num">Valor parado</th>
+      <th></th>
+    </tr>
+    {% for it in itens %}
+    <tr>
+      <td>
+        <div>{{ (it['loja_nome'] or it['catalog_nome'] or it['descricao_erp']
+                 or it['titulo'] or '')[:80] }}</div>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          linha {{ it['linha'] }} · {{ it['sku'] }}</div>
+        {% if it['erro'] %}
+          <div class="fraco" style="font-size:11px;margin-top:3px">{{ it['erro'][:160] }}</div>
+        {% endif %}
+      </td>
+      <td>
+        {% set r = rotulos.get(it['status'], (it['status'], 'neutro')) %}
+        <span class="pill {{ r[1] }}">{{ r[0] }}</span>
+        {% if it['permalink'] %}
+          <div><a href="{{ it['permalink'] }}" target="_blank" rel="noopener"
+                  style="font-size:11px">ver anúncio</a></div>
+        {% endif %}
+      </td>
+      <td class="fraco" style="font-size:12px">
+        {{ (it['decidido_em'] or '')[:16]|replace('T', ' ') }}</td>
+      <td class="num">R$ {{ '%.2f'|format(it['valor'] or 0) }}</td>
+      <td>
+        {% if it['status'] == 'publicado' %}
+          <span class="fraco" style="font-size:11px">já no ML</span>
+        {% else %}
+          <form method="post" action="/itens/{{ it['id'] }}/reabrir"
+                onsubmit="return confirm('Devolver esta peça para a fila?')">
+            <input type="hidden" name="lote_id" value="{{ lote_id }}">
+            <input type="hidden" name="volta_para" value="decididas">
+            <button class="secundario" type="submit"
+                    style="font-size:12px;padding:5px 10px">rever</button>
+          </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if fora %}
+<div class="card">
+  <h2>Não entraram na fila <span class="fraco" style="font-weight:400">·
+      {{ fora|length }} peça(s) que você não marcou na planilha</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">Se mudar de ideia sobre
+    alguma, traga para a fila aqui — sem precisar reenviar a planilha.</p>
+  <table>
+    <tr><th>Peça</th><th class="num">Valor parado</th><th></th></tr>
+    {% for it in fora %}
+    <tr>
+      <td>
+        <div>{{ (it['descricao_erp'] or it['titulo'] or '')[:80] }}</div>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          linha {{ it['linha'] }} · {{ it['sku'] }}</div>
+      </td>
+      <td class="num">R$ {{ '%.2f'|format(it['valor'] or 0) }}</td>
+      <td>
+        <form method="post" action="/itens/{{ it['id'] }}/reabrir">
+          <input type="hidden" name="lote_id" value="{{ lote_id }}">
+          <input type="hidden" name="volta_para" value="decididas">
+          <button class="secundario" type="submit"
+                  style="font-size:12px;padding:5px 10px">trazer para a fila</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}

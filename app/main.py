@@ -28,7 +28,7 @@ from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
-                        ler_planilha, montar_titulo)
+                        ler_planilha, montar_titulo, resumo_da_selecao)
 from app.triagem import triar_planilha, resumo as resumo_triagem
 
 logging.basicConfig(level=logging.INFO,
@@ -247,6 +247,7 @@ async def previa(request: Request, arquivo: UploadFile = File(...),
         "com_problema": sum(1 for i in itens if i.problemas),
         "regra_preco": regra_preco,
         "percentual": percentual,
+        "selecao": resumo_da_selecao(itens),
     })
 
 
@@ -331,11 +332,23 @@ async def triagem(request: Request, arquivo_salvo: str = Form(...),
                                  {"regra_preco": regra_preco,
                                   "percentual": percentual, "tipo": "fila"})
 
+    # Se a planilha trouxer coluna de seleção ("Anunciar", "Publicar"...), só
+    # as linhas marcadas entram na fila. Quem conhece o estoque é o João — o
+    # sistema não sabe que uma peça cara é encalhe insalvável.
+    selecao = resumo_da_selecao(itens)
+
     for t in triados:
+        if not t.pronto:
+            status_inicial = "sem_dado"
+        elif selecao["tem_coluna"] and not t.item.selecionada:
+            status_inicial = "nao_selecionado"
+        else:
+            status_inicial = "na_fila"
+
         storage.registrar_item(
             lote_id, t.item.linha, t.item.codigo, montar_titulo(t.item),
             payload={},
-            status="na_fila" if t.pronto else "sem_dado",
+            status=status_inicial,
             erro="; ".join(t.impedimentos) or None,
             descricao_erp=t.item.descricao,
             marca=t.item.marca,
@@ -403,6 +416,40 @@ async def prontas(request: Request, lote_id: int):
         "valor_total": sum(float(i["valor"] or 0) for i in itens),
         "resultado": None,
     })
+
+
+@app.get("/lotes/{lote_id}/decididas", response_class=HTMLResponse)
+async def decididas(request: Request, lote_id: int, status: str = "",
+                    busca: str = ""):
+    """Histórico do que já foi decidido, com opção de rever cada peça."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+
+    progresso = storage.progresso_da_fila(lote_id)
+    contagem = {k: v["itens"] for k, v in progresso.items()
+                if not k.startswith("_") and isinstance(v, dict)}
+
+    return templates.TemplateResponse(request, "decididas.html", {
+        "request": request, "lote_id": lote_id,
+        "itens": storage.itens_decididos(lote_id, status, busca),
+        "fora": storage.itens_fora_da_fila(lote_id),
+        "filtro": status, "busca": busca, "contagem": contagem,
+    })
+
+
+@app.post("/itens/{item_id}/reabrir")
+async def reabrir(item_id: int, lote_id: int = Form(...),
+                  volta_para: str = Form("fila")):
+    """Devolve a peça para a fila — para rever uma decisão ou trazer de volta
+    uma que tinha ficado fora da seleção da planilha."""
+    if not storage.reabrir_item(item_id):
+        raise HTTPException(400, (
+            "Esta peça já foi publicada no Mercado Livre. Desfazer aqui não "
+            "apagaria o anúncio de lá — para tirar do ar, faça isso pelo "
+            "próprio Mercado Livre."))
+    destino = (f"/lotes/{lote_id}/decididas" if volta_para == "decididas"
+               else f"/fila/{lote_id}")
+    return RedirectResponse(destino, status_code=303)
 
 
 @app.get("/itens/{item_id}/testar", response_class=HTMLResponse)

@@ -153,3 +153,58 @@ def test_aba_com_layout_diferente_e_ignorada(tmp_path):
     caminho = tmp_path / "x.csv"
     caminho.write_text("coluna_a;coluna_b\n1;2\n", encoding="utf-8")
     assert ler_planilha(caminho) == []
+
+
+# ---------------------------------------------------------------------------
+# Coluna de seleção na planilha (v0.16.0)
+# ---------------------------------------------------------------------------
+
+from app.sheets import (_achar_coluna_selecao, _ler_selecao,      # noqa: E402
+                        resumo_da_selecao, LinhaProduto as _LP)
+
+
+def test_acha_a_coluna_de_selecao_com_qualquer_grafia():
+    for nome in ["Anunciar", "ANUNCIAR", "anunciar", "Publicar", "Selecionar",
+                 "Marcar", "Subir", "OK", "X"]:
+        assert _achar_coluna_selecao(["Cód", "Descrição", nome]) == 2, nome
+
+
+def test_planilha_sem_coluna_de_selecao():
+    assert _achar_coluna_selecao(["Cód", "Descrição", "Qtd"]) is None
+
+
+def test_valores_que_contam_como_marcado():
+    for v in ["x", "X", "sim", "SIM", "s", "1", 1, True, "ok", "v"]:
+        assert _ler_selecao([v], 0) is True, repr(v)
+
+
+def test_valores_que_contam_como_nao_marcado():
+    for v in ["", None, 0, "nao", "não", "-", "n"]:
+        assert _ler_selecao([v], 0) is False, repr(v)
+
+
+def test_sem_coluna_a_selecao_e_none_nao_false():
+    """A diferença importa: None = 'planilha não escolhe, traz tudo'.
+
+    Se virasse False, uma planilha sem a coluna montaria uma fila vazia.
+    """
+    assert _ler_selecao(["qualquer"], None) is None
+
+
+def test_resumo_sem_coluna_nao_filtra_nada():
+    itens = [_LP(aba="a", linha=i, codigo=f"C{i}", descricao="d", quantidade=1)
+             for i in range(3)]
+    r = resumo_da_selecao(itens)
+    assert r["tem_coluna"] is False
+    assert r["total"] == 3
+
+
+def test_resumo_conta_as_marcadas():
+    itens = [_LP(aba="a", linha=1, codigo="C1", descricao="d", quantidade=1,
+                 selecionada=True),
+             _LP(aba="a", linha=2, codigo="C2", descricao="d", quantidade=1,
+                 selecionada=False),
+             _LP(aba="a", linha=3, codigo="C3", descricao="d", quantidade=1,
+                 selecionada=True)]
+    r = resumo_da_selecao(itens)
+    assert r["tem_coluna"] is True and r["marcadas"] == 2

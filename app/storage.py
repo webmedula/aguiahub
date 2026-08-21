@@ -285,7 +285,7 @@ PENDENTES = ("na_fila",)
 #: inutilizável, sem código, preço inválido). Nunca foram trabalhados por
 #: ninguém, então não entram nem como feitos nem como pendentes — senão a
 #: barra já nasce com 353 de 1687 "decididas", que é falso.
-FORA_DA_FILA = ("sem_dado",)
+FORA_DA_FILA = ("sem_dado", "nao_selecionado")
 
 #: Status em que a peça tem tudo que o ML precisa e só falta mandar.
 PRONTOS_PARA_PUBLICAR = ("pronto_com_fotos", "foto_do_operador",
@@ -494,3 +494,68 @@ def diagnostico_persistencia() -> dict:
         "tamanho_bytes": caminho.stat().st_size if caminho.exists() else 0,
         "decisoes_gravadas": decididas,
     }
+
+
+def itens_decididos(lote_id: int, status: str = "",
+                    busca: str = "") -> list[sqlite3.Row]:
+    """Histórico do que já foi decidido, mais recente primeiro.
+
+    Sem isso não há como revisar: a fila mostra a peça da vez e engole o
+    resto. Quem trabalhou 300 peças precisa poder voltar e conferir.
+    """
+    where = ["lote_id = ?", f"status NOT IN ({_marcas(PENDENTES)})",
+             f"status NOT IN ({_marcas(FORA_DA_FILA)})"]
+    params: list = [lote_id, *PENDENTES, *FORA_DA_FILA]
+
+    if status:
+        where.append("status = ?")
+        params.append(status)
+    if busca:
+        where.append("(UPPER(sku) LIKE ? OR UPPER(descricao_erp) LIKE ? "
+                     "OR UPPER(loja_nome) LIKE ?)")
+        alvo = f"%{busca.strip().upper()}%"
+        params += [alvo, alvo, alvo]
+
+    with conexao() as conn:
+        return conn.execute(
+            f"""SELECT * FROM itens WHERE {' AND '.join(where)}
+                ORDER BY decidido_em DESC, valor DESC""",
+            params,
+        ).fetchall()
+
+
+def itens_fora_da_fila(lote_id: int, status: str = "nao_selecionado",
+                       limite: int = 500) -> list[sqlite3.Row]:
+    """As peças que ficaram de fora — para poder trazer alguma de volta."""
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM itens WHERE lote_id = ? AND status = ?
+               ORDER BY valor DESC LIMIT ?""",
+            (lote_id, status, limite),
+        ).fetchall()
+
+
+def reabrir_item(item_id: int) -> bool:
+    """Devolve a peça para a fila, apagando a decisão anterior.
+
+    Não apaga o que foi descoberto (dados da loja, fotos, catálogo) — só o
+    veredito. Refazer o trabalho de busca à toa seria castigo, não correção.
+    Peça já publicada no ML não volta: desfazer aqui não apaga o anúncio de
+    lá, e a tela mentiria sobre o estado real.
+    """
+    with conexao() as conn:
+        linha = conn.execute("SELECT status FROM itens WHERE id = ?",
+                             (item_id,)).fetchone()
+        if linha is None or linha["status"] == "publicado":
+            return False
+        conn.execute(
+            """UPDATE itens
+               SET status = 'na_fila', decidido_em = NULL, erro = NULL,
+                   valor = ABS(valor), atualizado_em = ?
+               WHERE id = ?""",
+            (datetime.now(timezone.utc).isoformat(), item_id))
+    return True
+
+
+def _marcas(valores) -> str:
+    return ",".join("?" for _ in valores)

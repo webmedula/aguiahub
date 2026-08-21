@@ -5,6 +5,46 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.16.0 — 21/08/2026
+
+**"Não sei quais peças já foram decididas, e não tenho como revisar."**
+
+Três problemas relatados de uma vez, e o terceiro muda o desenho do sistema.
+
+*Ver o que já foi decidido.* Tela nova em `/lotes/{id}/decididas`: lista tudo
+que saiu da fila, com a situação, a data e o valor parado. Filtra por
+situação, procura por código ou descrição. As bolinhas de contagem no topo da
+fila viraram links — clicar em "2 com erro" abre exatamente essas duas.
+
+*Revisar.* Botão **rever** em cada peça, que devolve para a fila. Guarda o
+que já tinha sido descoberto — dados da loja, fotos, catálogo — e apaga só o
+veredito; refazer a busca à toa seria castigo, não correção. Peça já
+publicada no ML **não** volta: desfazer aqui não apagaria o anúncio de lá, e
+a tela estaria mentindo sobre o estado real.
+
+*Escolher as peças na planilha.* Esta é a mudança de fundo, e a razão é
+simples: **quem conhece o estoque é o João, não o sistema**. O Águiahub sabe
+ordenar por dinheiro parado, mas não sabe que uma peça de R$ 20 mil é
+encalhe insalvável e outra de R$ 300 sai toda semana.
+
+Agora, se a planilha tiver uma coluna chamada `Anunciar` (ou `Publicar`,
+`Selecionar`, `Marcar`, `Subir`, `X`, `OK`), **só as linhas marcadas entram
+na fila**. Marca-se com `x`, `sim`, `1` ou `ok` — a grafia é solta de
+propósito, é coluna digitada à mão. Sem a coluna, nada muda: a fila vem
+inteira, como antes.
+
+As não marcadas não somem — ficam listadas no fim da tela de decididas, com
+botão **trazer para a fila**, para quando mudar de ideia sobre alguma sem
+precisar reenviar a planilha. E elas não entram na barra de progresso: não
+são trabalho feito nem trabalho pendente.
+
+A tela de prévia diz qual dos dois casos é o seu antes de montar a fila, com
+o número de linhas marcadas.
+
+Quinze testes novos, 123 no total.
+
+---
+
 ## v0.15.0 — 21/08/2026
 
 **"body.invalid_fields" não é uma mensagem — é uma porta fechada.**
