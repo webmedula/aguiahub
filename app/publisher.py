@@ -693,3 +693,100 @@ async def publicar_com_fotos_proprias(item_id: int,
 
     return {"ok": True, "ml_item_id": ml_id, "permalink": criado.get("permalink"),
             "mensagem": f"Anúncio {ml_id} publicado com {len(ids)} foto(s)."}
+
+
+async def publicar_selecionados(ids: list[int],
+                                listing_type_id: str = "gold_special") -> dict:
+    """Publica de uma vez as peças que o operador escolheu na tela de prontas.
+
+    Cada peça sabe por qual caminho sair, pelo próprio status: foto da loja,
+    foto tirada no estoque, ou catálogo do ML. A conta é conferida uma vez só,
+    antes de tudo — se ela estiver bloqueada, as 40 peças falhariam igual e o
+    operador só veria 40 mensagens iguais.
+    """
+    if not ids:
+        return {"ok": False, "mensagem": "Nenhuma peça selecionada.",
+                "resultados": []}
+
+    client = MLClient()
+    diagnostico = await client.diagnostico_conta()
+    if not diagnostico["apta"]:
+        motivo = " | ".join(diagnostico["impedimentos"])
+        return {"ok": False, "mensagem": f"A conta não está apta: {motivo}",
+                "resultados": []}
+
+    semaforo = asyncio.Semaphore(get_settings().publish_concurrency)
+
+    async def uma(item_id: int) -> dict:
+        async with semaforo:
+            linha = storage.item(item_id)
+            if linha is None:
+                return {"item_id": item_id, "ok": False,
+                        "titulo": f"#{item_id}",
+                        "mensagem": "Item não encontrado."}
+
+            rotulo = (linha["loja_nome"] or linha["catalog_nome"]
+                      or linha["titulo"] or linha["descricao_erp"] or "")[:70]
+            status = linha["status"]
+
+            if status == DA_LOJA:
+                r = await publicar_da_loja(item_id, listing_type_id)
+            elif status == COM_FOTO_PROPRIA:
+                r = await publicar_com_fotos_proprias(item_id, listing_type_id)
+            elif status == AGUARDANDO:
+                r = await _publicar_por_catalogo(client, linha, listing_type_id)
+            else:
+                r = {"ok": False, "mensagem": (
+                    f"Esta peça está como '{status}' — não está pronta para "
+                    "publicar.")}
+
+            return {"item_id": item_id, "titulo": rotulo,
+                    "codigo": linha["sku"] or "", **r}
+
+    resultados = await asyncio.gather(*(uma(i) for i in ids))
+    ok = [r for r in resultados if r.get("ok")]
+
+    return {
+        "ok": bool(ok),
+        "publicados": len(ok),
+        "falharam": len(resultados) - len(ok),
+        "mensagem": (f"{len(ok)} anúncio(s) publicado(s)."
+                     if ok else "Nenhum anúncio foi publicado."),
+        "resultados": resultados,
+    }
+
+
+async def _publicar_por_catalogo(client: MLClient, linha,
+                                 listing_type_id: str) -> dict:
+    """Publica pelo catálogo do ML — o anúncio herda foto e ficha do produto."""
+    if not linha["catalog_product_id"]:
+        return {"ok": False, "mensagem": "Sem produto de catálogo vinculado."}
+    if not linha["catalog_category_id"]:
+        return {"ok": False, "mensagem": (
+            "Sem categoria — o Mercado Livre recusa o anúncio sem ela.")}
+
+    p = LinhaProduto(
+        aba="", linha=linha["linha"], codigo=linha["sku"] or "",
+        descricao=linha["descricao_erp"] or "",
+        quantidade=int(linha["quantidade"] or 1),
+        marca=linha["marca"] or "",
+    )
+    payload = montar_payload(
+        p, float(linha["preco"] or 0),
+        catalog_product_id=linha["catalog_product_id"],
+        category_id=linha["catalog_category_id"],
+        listing_type_id=listing_type_id,
+    )
+    try:
+        criado = await client.post("/items", payload)
+    except MLApiError as exc:
+        storage.atualizar_item(linha["id"], status=ERRO,
+                               erro=exc.mensagem_amigavel())
+        return {"ok": False, "mensagem": exc.mensagem_amigavel()}
+
+    ml_id = criado.get("id")
+    storage.atualizar_item(linha["id"], status=PUBLICADO, ml_item_id=ml_id,
+                           permalink=criado.get("permalink"))
+    return {"ok": True, "ml_item_id": ml_id,
+            "permalink": criado.get("permalink"),
+            "mensagem": f"Anúncio {ml_id} publicado."}

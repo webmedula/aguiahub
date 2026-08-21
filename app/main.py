@@ -23,7 +23,7 @@ from app import loja
 from app import fotos as mod_fotos
 from app.publisher import (analisar_lote, cruzar_lote_com_loja,
                            publicar_aprovados, publicar_com_fotos_proprias,
-                           publicar_da_loja,
+                           publicar_da_loja, publicar_selecionados,
                            resumir, vincular_por_link, vincular_qualquer,
                            vincular_produto_da_loja)
 from app.sheets import (FORMATOS_ACEITOS, FormatoNaoSuportado, calcular_preco,
@@ -388,6 +388,41 @@ async def fila(request: Request, lote_id: int):
         "da_loja": da_loja,
         "fotos_proprias": mod_fotos.listar(item["id"]) if item else [],
         "progresso": storage.progresso_da_fila(lote_id),
+    })
+
+
+@app.get("/lotes/{lote_id}/prontas", response_class=HTMLResponse)
+async def prontas(request: Request, lote_id: int):
+    """Lista as peças que já têm foto e dados — e permite publicar em lote."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    itens = storage.itens_prontos_para_publicar(lote_id)
+    return templates.TemplateResponse(request, "prontas.html", {
+        "request": request, "lote_id": lote_id, "itens": itens,
+        "valor_total": sum(float(i["valor"] or 0) for i in itens),
+        "resultado": None,
+    })
+
+
+@app.post("/lotes/{lote_id}/publicar-selecionadas", response_class=HTMLResponse)
+async def publicar_selecionadas(request: Request, lote_id: int,
+                                ids: list[int] = Form(default=[]),
+                                confirmacao: str = Form("")):
+    """Publica no Mercado Livre as peças marcadas. Cria anúncios REAIS."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    if confirmacao.strip().upper() != "PUBLICAR":
+        raise HTTPException(400, "Digite PUBLICAR para confirmar a publicação.")
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+
+    resultado = await publicar_selecionados(ids)
+
+    itens = storage.itens_prontos_para_publicar(lote_id)
+    return templates.TemplateResponse(request, "prontas.html", {
+        "request": request, "lote_id": lote_id, "itens": itens,
+        "valor_total": sum(float(i["valor"] or 0) for i in itens),
+        "resultado": resultado,
     })
 
 

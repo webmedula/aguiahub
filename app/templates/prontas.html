@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block titulo %}Prontas para publicar{% endblock %}
+{% block conteudo %}
+
+{% set origem = {
+  'pronto_com_fotos':     ('foto da loja',        'ok'),
+  'foto_do_operador':     ('foto tirada aqui',    'ok'),
+  'aguardando_aprovacao': ('catálogo do ML',      'neutro'),
+} %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Prontas para publicar</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ itens|length }} peça(s) ·
+      R$ {{ '%.2f'|format(valor_total) }} parado
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+{% if resultado %}
+<div class="card" style="border-color:{{ 'rgba(46,163,107,.5)' if resultado.ok
+     else 'rgba(208,69,63,.5)' }}">
+  <h2>{{ resultado.mensagem }}</h2>
+  <table>
+    <tr><th>Peça</th><th>Resultado</th></tr>
+    {% for r in resultado.resultados %}
+    <tr>
+      <td>{{ r.titulo }}<div class="fraco" style="font-size:11px">{{ r.codigo }}</div></td>
+      <td>
+        {% if r.ok %}
+          <span class="pill ok">publicado</span>
+          {% if r.permalink %}
+            <a href="{{ r.permalink }}" target="_blank" rel="noopener"
+               style="margin-left:8px">ver no ML</a>
+          {% endif %}
+        {% else %}
+          <span class="pill erro">falhou</span>
+          <div class="fraco" style="font-size:12px;margin-top:4px">{{ r.mensagem }}</div>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if not itens %}
+<div class="card" style="text-align:center;padding:40px">
+  <h2 style="font-size:18px">Nenhuma peça pronta ainda</h2>
+  <p class="fraco">Uma peça fica pronta quando ganha foto — pelo cruzamento com
+  a loja da Águia, ou por foto tirada na tela da fila.</p>
+  <a class="botao" href="/fila/{{ lote_id }}">Ir para a fila</a>
+</div>
+{% else %}
+
+<form method="post" action="/lotes/{{ lote_id }}/publicar-selecionadas"
+      onsubmit="return confereSenha(this)">
+<div class="card">
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+              margin-bottom:14px">
+    <button type="button" class="secundario" onclick="marcarTodas(true)">Marcar todas</button>
+    <button type="button" class="secundario" onclick="marcarTodas(false)">Desmarcar</button>
+    <span class="fraco" style="font-size:13px" id="contador"></span>
+  </div>
+
+  <table>
+    <tr>
+      <th style="width:34px"></th>
+      <th style="width:56px"></th>
+      <th>Peça</th>
+      <th>Origem da foto</th>
+      <th class="num">Preço</th>
+      <th class="num">Qtd</th>
+    </tr>
+    {% for it in itens %}
+    {% set fotos = it['loja_fotos']|fromjson %}
+    <tr>
+      <td><input type="checkbox" name="ids" value="{{ it['id'] }}"
+                 class="sel" onchange="atualiza()"></td>
+      <td>
+        {% if fotos %}
+          <img src="{{ fotos[0] }}" alt="" style="width:46px;height:46px;
+               object-fit:cover;border-radius:6px;background:#11141a">
+        {% elif it['catalog_foto'] %}
+          <img src="{{ it['catalog_foto'] }}" alt="" style="width:46px;height:46px;
+               object-fit:cover;border-radius:6px;background:#11141a">
+        {% else %}
+          <div style="width:46px;height:46px;border-radius:6px;background:#11141a;
+               display:flex;align-items:center;justify-content:center;
+               font-size:10px;color:var(--fraco)">foto</div>
+        {% endif %}
+      </td>
+      <td>
+        <div>{{ (it['loja_nome'] or it['catalog_nome'] or it['titulo'] or
+                 it['descricao_erp'])[:80] }}</div>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ it['sku'] }}</div>
+        {% if it['erro'] %}
+          <div style="font-size:11px;color:#e3b45c;margin-top:3px">{{ it['erro'] }}</div>
+        {% endif %}
+      </td>
+      <td>
+        {% set o = origem.get(it['status'], ('—','neutro')) %}
+        <span class="pill {{ o[1] }}">{{ o[0] }}</span>
+        {% if it['loja_url'] %}
+          <a href="{{ it['loja_url'] }}" target="_blank" rel="noopener"
+             style="font-size:11px;margin-left:6px">ver na loja</a>
+        {% endif %}
+      </td>
+      <td class="num">R$ {{ '%.2f'|format(it['preco'] or 0) }}</td>
+      <td class="num">{{ it['quantidade'] or 1 }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card" style="border-color:rgba(208,69,63,.35)">
+  <h2>Publicar de verdade no Mercado Livre</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Isto cria anúncios reais na conta da Águia Parts, com preço e estoque da
+    planilha. Para confirmar, digite <strong>PUBLICAR</strong> abaixo.</p>
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+    <div>
+      <label for="senha">Confirmação</label>
+      <input id="senha" name="confirmacao" autocomplete="off" placeholder="PUBLICAR">
+    </div>
+    <button type="submit">Publicar selecionadas</button>
+  </div>
+</div>
+</form>
+
+<script>
+function marcarTodas(v){
+  document.querySelectorAll('.sel').forEach(c => c.checked = v);
+  atualiza();
+}
+function atualiza(){
+  const n = document.querySelectorAll('.sel:checked').length;
+  document.getElementById('contador').textContent =
+    n ? n + ' selecionada(s)' : '';
+}
+function confereSenha(f){
+  if (f.confirmacao.value.trim().toUpperCase() !== 'PUBLICAR'){
+    alert('Digite PUBLICAR no campo de confirmação.');
+    return false;
+  }
+  const n = document.querySelectorAll('.sel:checked').length;
+  if (!n){ alert('Marque ao menos uma peça.'); return false; }
+  return confirm('Publicar ' + n + ' anúncio(s) reais no Mercado Livre?');
+}
+atualiza();
+</script>
+{% endif %}
+
+{% endblock %}

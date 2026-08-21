@@ -38,6 +38,10 @@
         {% if progresso.get('_adiados') %}
           {{ progresso['_adiados'] }} delas já foram puladas antes.
         {% endif %}
+        {% if progresso.get('_fora_da_fila') %}
+          Outras {{ progresso['_fora_da_fila'] }} ficaram fora da fila por não
+          ter código utilizável.
+        {% endif %}
         O progresso fica gravado — pode fechar e voltar depois que a fila
         continua de onde parou.
       </div>
@@ -46,7 +50,7 @@
 
   {% if feitos %}
   <div style="margin-top:14px;padding-top:14px;border-top:1px solid #232833;
-              display:flex;gap:8px;flex-wrap:wrap">
+              display:flex;gap:8px;flex-wrap:wrap;align-items:center">
     {% for chave, rotulo in rotulos.items() %}
       {% if progresso.get(chave, {}).get('itens') %}
       <span style="font-size:12px;background:#11141a;border:1px solid #232833;
@@ -58,6 +62,23 @@
   </div>
   {% endif %}
 </div>
+
+{% if progresso.get('_prontos') or progresso.get('_publicados') %}
+<div class="card" style="border-color:rgba(46,163,107,.45);
+     background:rgba(46,163,107,.06);display:flex;gap:14px;align-items:center;
+     flex-wrap:wrap">
+  <div style="flex:1;min-width:260px">
+    <strong>{{ progresso.get('_prontos', 0) }} peça(s) prontas para publicar</strong>
+    <div class="fraco" style="font-size:13px">
+      Já têm foto e dados — falta só mandar para o Mercado Livre.
+      {% if progresso.get('_publicados') %}
+        {{ progresso['_publicados'] }} já publicada(s).
+      {% endif %}
+    </div>
+  </div>
+  <a class="botao" href="/lotes/{{ lote['id'] }}/prontas">Ver e publicar</a>
+</div>
+{% endif %}
 
 <div class="card" style="padding:20px;display:flex;gap:14px;align-items:center;
      flex-wrap:wrap">

@@ -5,6 +5,43 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.13.0 — 21/08/2026
+
+**"Mostra 353 decididas. Mas como sei quais são e como publicar elas?"**
+
+Duas respostas, e a primeira é que o número estava errado de novo — na
+direção contrária.
+
+*Os 353 não eram trabalho feito.* Eram os itens que a **triagem** descartou
+antes da fila começar, por não ter código utilizável (status `sem_dado`).
+Consertando o contador na v0.12.0 eu passei a somar tudo que não fosse
+`na_fila`, e varri esses para dentro. A fila nasceu marcando 21% de
+progresso sem ninguém ter clicado em nada. Agora eles saem da conta inteira
+— não são feitos nem pendentes — e aparecem numa frase à parte: *"outras
+353 ficaram fora da fila por não ter código utilizável"*.
+
+*Faltava a tela.* Não existia lugar nenhum para ver as peças prontas nem
+para publicá-las em lote — a única publicação possível era uma a uma, dentro
+da fila. Agora tem:
+
+- Faixa verde no topo da fila: **"N peças prontas para publicar"**, com botão.
+- Tela nova em `/lotes/{id}/prontas`: lista com foto, título, código, preço,
+  estoque e de onde veio a foto (loja da Águia, foto tirada no estoque, ou
+  catálogo do ML). Ordenada pela peça de maior valor parado primeiro.
+- Seleção por caixinha, *marcar todas*, e **publicar as selecionadas de uma
+  vez** — cada peça sai pelo caminho certo conforme o próprio status.
+- Continua exigindo digitar `PUBLICAR`, mais a confirmação do navegador. A
+  conta é real e o preço vem da planilha.
+- A conta do Mercado Livre é conferida **uma vez, antes de tudo**. Se
+  estiver bloqueada, 40 peças falhariam com a mesma mensagem — melhor dizer
+  uma vez e não publicar nada.
+- O resultado volta peça por peça, com link do anúncio no ML quando deu
+  certo e o motivo quando não deu.
+
+Seis testes novos, 94 no total.
+
+---
+
 ## v0.12.0 — 21/08/2026
 
 **O contador não andava, e o trabalho corria risco de sumir.**

@@ -218,3 +218,84 @@ def test_diagnostico_de_persistencia_conta_decisoes(tmp_path, monkeypatch):
     d = storage.diagnostico_persistencia()
     assert d["existe"] is True
     assert d["decisoes_gravadas"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tela de prontas e publicação em lote (v0.13.0)
+# ---------------------------------------------------------------------------
+
+def test_descartadas_pela_triagem_nao_contam_como_decididas(tmp_path, monkeypatch):
+    """Relato real: '353 de 1687 decididas' logo depois de montar a fila.
+
+    Os 353 eram itens que a triagem descartou por não ter código utilizável
+    ('sem_dado'). Ninguém trabalhou neles — não podem entrar na barra.
+    """
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="sem_dado")
+    storage.atualizar_dados_catalogo(ids[1], status="sem_dado")
+
+    p = storage.progresso_da_fila(lote_id)
+    assert p["_fora_da_fila"] == 2
+    assert p["_total"] == 3            # 5 na planilha, 3 trabalháveis
+    assert p["_feitos"] == 0
+    assert p["_faltam"] == 3
+
+
+def test_lista_de_prontas_traz_os_tres_caminhos(tmp_path, monkeypatch):
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+    storage.atualizar_dados_catalogo(ids[1], status="foto_do_operador")
+    storage.atualizar_dados_catalogo(ids[2], status="aguardando_aprovacao")
+    storage.atualizar_dados_catalogo(ids[3], status="nao_encontrado")
+
+    prontas = storage.itens_prontos_para_publicar(lote_id)
+    assert {p["id"] for p in prontas} == {ids[0], ids[1], ids[2]}
+    assert storage.progresso_da_fila(lote_id)["_prontos"] == 3
+
+
+def test_prontas_vem_ordenada_por_valor(tmp_path, monkeypatch):
+    """A peça mais cara parada primeiro — é onde está o dinheiro."""
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    for i in ids[:3]:
+        storage.atualizar_dados_catalogo(i, status="pronto_com_fotos")
+    prontas = storage.itens_prontos_para_publicar(lote_id)
+    valores = [p["valor"] for p in prontas]
+    assert valores == sorted(valores, reverse=True)
+
+
+def test_publicar_sem_selecionar_nada_nao_chama_o_ml(tmp_path, monkeypatch):
+    import asyncio
+    from app.publisher import publicar_selecionados
+    r = asyncio.run(publicar_selecionados([]))
+    assert r["ok"] is False
+    assert r["resultados"] == []
+
+
+def test_rota_de_publicar_exige_a_palavra_publicar(tmp_path, monkeypatch):
+    """Sem digitar PUBLICAR, nada sai — a conta é real."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="pronto_com_fotos")
+
+    cli = TestClient(app, base_url="https://testserver")
+    r = cli.post(f"/lotes/{lote_id}/publicar-selecionadas",
+                 data={"ids": [ids[0]], "confirmacao": "sim"})
+    assert r.status_code == 400
+    assert storage.item(ids[0])["status"] == "pronto_com_fotos"
+
+
+def test_peca_que_nao_esta_pronta_e_recusada_sem_ir_ao_ml(tmp_path, monkeypatch):
+    import asyncio
+    from app import publisher
+    storage, lote_id, ids = _lote_de_teste(tmp_path, monkeypatch)
+    storage.atualizar_dados_catalogo(ids[0], status="nao_encontrado")
+
+    class ContaOk:
+        async def diagnostico_conta(self):
+            return {"apta": True, "impedimentos": []}
+
+    monkeypatch.setattr(publisher, "MLClient", lambda *a, **k: ContaOk())
+    r = asyncio.run(publisher.publicar_selecionados([ids[0]]))
+    assert r["publicados"] == 0
+    assert "não está pronta" in r["resultados"][0]["mensagem"]

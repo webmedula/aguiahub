@@ -281,6 +281,16 @@ def proximo_da_fila(lote_id: int, status: str = "na_fila") -> sqlite3.Row | None
 #: que nem existe) e, a cada status novo que eu criava, o número parava mais.
 PENDENTES = ("na_fila",)
 
+#: Status de itens que a triagem descartou antes da fila começar (código
+#: inutilizável, sem código, preço inválido). Nunca foram trabalhados por
+#: ninguém, então não entram nem como feitos nem como pendentes — senão a
+#: barra já nasce com 353 de 1687 "decididas", que é falso.
+FORA_DA_FILA = ("sem_dado",)
+
+#: Status em que a peça tem tudo que o ML precisa e só falta mandar.
+PRONTOS_PARA_PUBLICAR = ("pronto_com_fotos", "foto_do_operador",
+                         "aguardando_aprovacao")
+
 
 def _carimbar_decisao(conn, item_id: int, status: str, quando: str) -> None:
     """Grava a hora da decisão na primeira vez que o item sai de 'na_fila'.
@@ -318,15 +328,35 @@ def progresso_da_fila(lote_id: int) -> dict:
         ).fetchone()["d"]
 
     resumo = {r["status"]: {"itens": r["n"], "valor": r["v"]} for r in linhas}
-    total = sum(v["itens"] for v in resumo.values())
-    faltam = sum(resumo.get(s, {}).get("itens", 0) for s in PENDENTES)
+
+    def _soma(chaves) -> int:
+        return sum(resumo.get(k, {}).get("itens", 0) for k in chaves)
+
+    fora = _soma(FORA_DA_FILA)
+    total = sum(v["itens"] for v in resumo.values()) - fora
+    faltam = _soma(PENDENTES)
 
     resumo["_total"] = total
     resumo["_feitos"] = total - faltam
     resumo["_faltam"] = faltam
+    resumo["_fora_da_fila"] = fora
+    resumo["_prontos"] = _soma(PRONTOS_PARA_PUBLICAR)
+    resumo["_publicados"] = _soma(("publicado",))
     resumo["_adiados"] = adiados
     resumo["_ultima_decisao"] = ultima
     return resumo
+
+
+def itens_prontos_para_publicar(lote_id: int) -> list[sqlite3.Row]:
+    """As peças que já têm foto e dados — só falta mandar para o ML."""
+    marcas = ",".join("?" for _ in PRONTOS_PARA_PUBLICAR)
+    with conexao() as conn:
+        return conn.execute(
+            f"""SELECT * FROM itens
+                WHERE lote_id = ? AND status IN ({marcas})
+                ORDER BY valor DESC""",
+            (lote_id, *PRONTOS_PARA_PUBLICAR),
+        ).fetchall()
 
 
 def atualizar_dados_catalogo(item_id: int, **campos) -> None:
