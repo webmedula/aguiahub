@@ -5,6 +5,85 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.24.0 — 27/08/2026
+
+**O sistema procura a peça na internet sozinho.**
+
+Pedido do João: *"acho que o sistema poderia ter a opção de procurar na
+internet em geral se acha o produto da lista"*.
+
+O que existia até aqui era só a metade de baixo desse fluxo. O extrator
+(v0.20.0) lê a ficha de qualquer site — mas **só depois que alguém tinha
+achado o link e colado na tela**. Achar o link era trabalho manual, peça por
+peça, com um Google aberto do lado. Com 1.687 itens, essa era a parte cara.
+
+Agora a fila tem o botão **"Procurar esta peça na internet"**: o sistema
+consulta a busca interna dos sites que conhece pelo código do ERP e devolve
+as páginas candidatas. Cada uma leva para a mesma tela de ficha de sempre —
+**nada é aproveitado sem a confirmação da pessoa**.
+
+### Onde ele procura
+
+Duas fontes, e a segunda vem desligada:
+
+1. **Sites conhecidos** (padrão, sem chave nenhuma). Nova tela `/sites`, no
+   mesmo espírito de `/fontes`: acrescentar o site de um fabricante não pode
+   exigir mexer no EasyPanel e refazer o deploy. Basta o domínio
+   (`bosch.com.br`) — o sistema descobre sozinho o endereço de busca do site
+   na primeira peça, tentando os padrões de WooCommerce, WordPress, VTEX e
+   Magento, e **grava o que funcionou**. Da segunda peça em diante aquele
+   site custa uma requisição em vez de cinco. Quem tiver endereço de busca
+   fora do comum pode cadastrar com `{q}` no lugar do código.
+
+   Os domínios já autorizados em `/fontes` entram de graça: se a Águia
+   declarou representar aquela marca, é onde a peça mais tem chance de estar
+   — e onde a foto poderá ser aproveitada depois.
+
+2. **API de busca** (opcional). Com `BUSCA_API_KEY` configurada, consulta
+   Brave Search ou Google Custom Search e alcança a internet inteira. Sem a
+   chave, esse caminho fica simplesmente inativo e o resto funciona igual. As
+   duas provedoras têm faixa gratuita que cobre o uso da Águia.
+
+**O que não foi feito, de propósito:** raspar página de resultado do Google
+ou do Bing. Quebra sem aviso, faz o IP do VPS ser bloqueado e vai contra os
+termos dos dois — seria uma funcionalidade que funciona no teste e morre no
+`31.97.87.68`. É por isso que a busca ampla passa por chave de API.
+
+### O que a busca não muda
+
+Nada nas regras de direito autoral. Este caminho descobre **endereços**;
+quem lê foto e texto continua sendo o extrator, com as mesmas regras: foto e
+descrição só de domínio autorizado, fato técnico de qualquer um. A tela
+`/sites` avisa isso na cara: cadastrar um site ali diz *onde procurar*, não
+*de quem posso usar foto*. Site de concorrente pode ser ótimo para conferir
+ficha técnica e continua proibido de ceder imagem.
+
+Anúncio do Mercado Livre é descartado dos resultados da API: o ML bloqueia a
+leitura (403) e reaproveitar foto de lá é exatamente o que derruba conta.
+
+O `robots.txt` de cada site é respeitado também na página de busca — a regra
+vale para tudo que a aplicação lê sozinha, não só para a ficha do produto.
+Por isso `extrator._robots_permite` virou `extrator.robots_permite`.
+
+### Detalhes que já custaram caro antes
+
+- **Código pontuado.** A busca casa `0281036486` do ERP com `0.281.036.486`
+  do site, reusando `loja.variantes_de_codigo`. É o mesmo problema que fazia
+  o item de R$ 47.864 aparecer como "não tenho na loja" até a v0.14.
+- **Peça sem código utilizável** não dispara requisição nenhuma: avisa que
+  sem código não há o que procurar e manda tirar foto da prateleira.
+- **Ordem dos candidatos:** quem tem o código no endereço ou no texto do link
+  vem primeiro; a tela diz, candidato a candidato, se o código bate ou não —
+  em vez de deixar parecer que o sistema conferiu a peça. Ele não conferiu.
+- **Teto de 8 sites por busca**, para a tela não ficar pendurada e para não
+  bater na porta de dez sites em cada uma das 1.687 peças.
+
+Novos arquivos: `app/busca.py`, `app/templates/candidatos.html`,
+`app/templates/sites.html`, `tests/test_busca.py` (25 testes novos; 199 no
+total).
+
+---
+
 ## v0.23.0 — 21/08/2026
 
 **Tela de pré-anúncio: editar texto e trocar foto antes de publicar.**

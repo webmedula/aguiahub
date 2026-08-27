@@ -57,6 +57,23 @@ CREATE TABLE IF NOT EXISTS fontes_autorizadas (
     criado_em  TEXT NOT NULL
 );
 
+-- Onde o sistema procura a peça quando o operador pede "procurar na
+-- internet". Fica no banco (e não em variável de ambiente) pela mesma razão
+-- das fontes autorizadas: acrescentar o site de um fabricante não pode
+-- exigir mexer no EasyPanel e refazer o deploy.
+CREATE TABLE IF NOT EXISTS sites_busca (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome       TEXT,
+    -- domínio puro ('bosch.com.br') ou endereço próprio com {q}
+    -- ('https://site.com.br/busca?q={q}')
+    padrao     TEXT NOT NULL UNIQUE,
+    -- endereço de busca que funcionou de fato, descoberto na primeira
+    -- consulta: evita tentar cinco caminhos em cada peça seguinte
+    descoberto TEXT,
+    ativo      INTEGER NOT NULL DEFAULT 1,
+    criado_em  TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_itens_lote ON itens(lote_id);
 -- Impede republicar o mesmo SKU por engano em execuções repetidas.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_itens_sku_publicado
@@ -639,3 +656,81 @@ def dominios_autorizados() -> set[str]:
         return {r["dominio"] for r in listar_fontes()}
     except sqlite3.Error:
         return set()
+
+
+# ---------------------------------------------------------------------------
+# Sites onde procurar a peça (app/busca.py)
+# ---------------------------------------------------------------------------
+#
+# Repare que esta lista é diferente da de fontes autorizadas, e de propósito:
+# aqui é "onde procurar", lá é "de quem a Águia tem direito de usar a foto".
+# Cadastrar um site aqui não autoriza imagem nenhuma — um concorrente pode
+# ser ótimo lugar para conferir a ficha técnica e continuar proibido de ceder
+# foto. Quem autoriza imagem é a tela /fontes, e só ela.
+
+def listar_sites_busca(so_ativos: bool = False) -> list[sqlite3.Row]:
+    sql = "SELECT * FROM sites_busca"
+    if so_ativos:
+        sql += " WHERE ativo = 1"
+    sql += " ORDER BY nome, padrao"
+    try:
+        with conexao() as conn:
+            return conn.execute(sql).fetchall()
+    except sqlite3.Error:
+        return []
+
+
+def acrescentar_site_busca(padrao: str, nome: str = "") -> str:
+    """Cadastra um site onde procurar. Aceita domínio ou endereço com {q}."""
+    bruto = (padrao or "").strip()
+    if not bruto:
+        raise ValueError("Informe o site onde procurar.")
+
+    if "{q}" in bruto:
+        limpo = bruto if bruto.startswith(("http://", "https://")) \
+            else "https://" + bruto.lstrip("/")
+    else:
+        limpo = _normalizar_dominio(bruto)
+        if not limpo or "." not in limpo:
+            raise ValueError(
+                f"'{padrao}' não parece um site. Cole o domínio "
+                "(bosch.com.br) ou o endereço de busca com {q} no lugar do "
+                "código (https://site.com.br/busca?q={q}).")
+
+    with conexao() as conn:
+        conn.execute(
+            """INSERT INTO sites_busca (nome, padrao, ativo, criado_em)
+               VALUES (?, ?, 1, ?)
+               ON CONFLICT(padrao) DO UPDATE SET
+                   ativo = 1,
+                   nome = COALESCE(NULLIF(excluded.nome, ''), sites_busca.nome)""",
+            (nome.strip()[:120], limpo, datetime.now(timezone.utc).isoformat()))
+    return limpo
+
+
+def remover_site_busca(site_id: int) -> None:
+    with conexao() as conn:
+        conn.execute("DELETE FROM sites_busca WHERE id = ?", (int(site_id),))
+
+
+def alternar_site_busca(site_id: int) -> None:
+    """Liga/desliga um site sem perder o cadastro nem o endereço descoberto."""
+    with conexao() as conn:
+        conn.execute(
+            "UPDATE sites_busca SET ativo = 1 - ativo WHERE id = ?",
+            (int(site_id),))
+
+
+def gravar_padrao_descoberto(site_id: int, endereco: str) -> None:
+    """Guarda o endereço de busca que funcionou naquele site.
+
+    Sem isto, cada peça faria o sistema tentar de novo os cinco caminhos de
+    ``PADROES_BUSCA`` até achar o certo — cinco requisições ao site alheio
+    para descobrir o que já se sabia na peça anterior.
+    """
+    try:
+        with conexao() as conn:
+            conn.execute("UPDATE sites_busca SET descoberto = ? WHERE id = ?",
+                         (endereco, int(site_id)))
+    except sqlite3.Error:
+        pass        # cache; falhar aqui não pode derrubar a busca

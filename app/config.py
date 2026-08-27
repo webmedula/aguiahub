@@ -49,6 +49,17 @@ class Settings:
     loja_base_url: str = os.getenv("LOJA_BASE_URL",
                                    "https://loja.aguiadiesel.com.br")
 
+    # --- Procurar a peça na internet (app/busca.py) ---
+    # Sem chave, o sistema procura só nos sites cadastrados na tela /sites e
+    # nos domínios já autorizados em /fontes — que é o modo padrão e não
+    # depende de contratar nada. Preenchendo a chave, a mesma tela passa a
+    # consultar também uma API de busca e alcança a internet inteira.
+    # Provedor: 'brave' (padrão) ou 'google'.
+    busca_api_provedor: str = os.getenv("BUSCA_API_PROVEDOR", "brave")
+    busca_api_key: str = os.getenv("BUSCA_API_KEY", "")
+    # Só para o Google Custom Search: o identificador do mecanismo de busca.
+    busca_google_cx: str = os.getenv("BUSCA_GOOGLE_CX", "")
+
     # --- Aplicação ---
     secret_key: str = os.getenv("SECRET_KEY", "troque-isto-em-producao")
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./data/aguiahub.db")

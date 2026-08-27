@@ -125,12 +125,16 @@ def fonte_autorizada_para_imagem(url: str) -> bool:
     return any(alvo == d or alvo.endswith("." + d) for d in permitidos)
 
 
-async def _robots_permite(url: str) -> bool:
+async def robots_permite(url: str) -> bool:
     """Respeita o robots.txt do site.
 
     Não é formalidade: é o sinal que o site publica dizendo o que aceita que
     robô leia. Ignorar isso é o começo do caminho que termina em IP bloqueado
     e, dependendo do site, em problema jurídico.
+
+    Público desde a v0.24 (era ``_robots_permite``) porque ``app/busca.py``
+    lê a página de busca dos sites e precisa da mesma checagem: a regra vale
+    para tudo que a aplicação busca sozinha, não só para a ficha do produto.
     """
     partes = urlparse(url)
     robots = f"{partes.scheme}://{partes.netloc}/robots.txt"
@@ -157,7 +161,7 @@ async def extrair(url: str) -> DadosExtraidos:
             "Endereço inválido. Cole o link completo da página do produto, "
             "começando com https://")
 
-    if not await _robots_permite(url):
+    if not await robots_permite(url):
         raise ExtratorError(
             f"O site {dominio_de(url)} não autoriza leitura automática desta "
             "página (robots.txt). Dá para abrir no navegador e digitar os "

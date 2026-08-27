@@ -297,6 +297,29 @@
 </div>
 
 <div class="card" style="padding:26px">
+  <h2 style="font-size:15px">Não sabe onde a peça está? Deixe o sistema procurar</h2>
+  <p class="fraco" style="font-size:14px;margin-top:-6px">
+    Procura o código <code>{{ item['sku'] }}</code> nos sites cadastrados e nas
+    marcas já autorizadas, e traz as páginas que parecem ser esta peça. Você
+    escolhe qual abrir — <strong>nada é aproveitado sem a sua
+    confirmação</strong>.
+  </p>
+
+  <form method="post" action="/itens/{{ item['id'] }}/buscar-na-internet"
+        style="margin-top:14px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote['id'] }}">
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Procurar esta peça na internet</button>
+    <a class="fraco" style="font-size:13px" href="/sites">ver onde eu procuro ↗</a>
+  </form>
+
+  <p class="fraco" style="font-size:13px;margin-bottom:0">
+    Pode levar alguns segundos: o sistema consulta os sites um a um,
+    respeitando o que cada um permite ler.
+  </p>
+</div>
+
+<div class="card" style="padding:26px">
   <h2 style="font-size:15px">Achou a peça em outro site? Cole o link para ler a ficha</h2>
   <p class="fraco" style="font-size:14px;margin-top:-6px">
     Site de fabricante, de fornecedor, de concorrente — qualquer um. O sistema

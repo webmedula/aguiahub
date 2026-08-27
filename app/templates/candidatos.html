@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block titulo %}Páginas encontradas{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">
+      Procurei <code>{{ item['sku'] }}</code> na internet</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ item['descricao_erp'] }}{% if item['marca'] %} · {{ item['marca'] }}{% endif %}
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+{% if resultado.candidatos %}
+<div class="card">
+  <h2 style="margin-top:0">{{ resultado.candidatos|length }} página(s) que podem
+    ser esta peça</h2>
+  <p class="fraco" style="font-size:13px;margin-top:-6px">
+    O sistema achou os endereços — <strong>ele não conferiu se é a mesma
+    peça</strong>. Abra a que parecer certa e leia a ficha: lá dá para
+    comparar código, marca e aplicação lado a lado com a planilha.
+  </p>
+
+  {% for c in resultado.candidatos %}
+  <div style="padding:14px 0;border-top:1px solid var(--linha);display:flex;
+              gap:14px;align-items:flex-start;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <div style="font-size:16px;font-weight:600;line-height:1.35">
+        {{ c.titulo }}</div>
+      <div class="fraco" style="font-size:13px;margin-top:4px">
+        {{ c.dominio }}
+        {% if c.confere_codigo %}
+          · <span style="color:var(--ok)">o código aparece nesta página</span>
+        {% else %}
+          · <span style="color:#e3b45c">o código não aparece no link</span>
+        {% endif %}
+        {% if c.fonte == 'api' %} · busca ampla{% endif %}
+        <br><a href="{{ c.url }}" target="_blank" rel="noopener"
+               style="font-size:12px">{{ c.url }} ↗</a>
+      </div>
+    </div>
+    <form method="post" action="/itens/{{ item['id'] }}/pesquisar">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input type="hidden" name="url" value="{{ c.url }}">
+      <button class="secundario" type="submit"
+              style="font-size:15px;padding:11px 18px">Ler a ficha</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if resultado.avisos %}
+<div class="aviso">
+  {% for a in resultado.avisos %}<div>{{ a }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2 style="margin-top:0;font-size:15px">Onde eu procurei</h2>
+  {% if resultado.sites_consultados %}
+  <p style="margin:0;font-size:14px">
+    {{ resultado.sites_consultados | join(' · ') }}
+    {% if resultado.api_ativa %} · busca ampla por API{% endif %}
+  </p>
+  {% else %}
+  <p style="margin:0;font-size:14px">Nenhum site cadastrado ainda.</p>
+  {% endif %}
+  <p class="fraco" style="font-size:13px;margin-bottom:0">
+    A busca só alcança os sites que você cadastrar, mais as marcas já
+    autorizadas em Fontes de imagem. Se a peça costuma aparecer em algum site
+    que não está aí, vale acrescentar — serve para todas as peças daqui em
+    diante.
+    <br><a href="/sites">Gerenciar os sites de busca &rarr;</a>
+  </p>
+</div>
+
+<div class="card" style="padding:20px">
+  <h2 style="font-size:15px;margin-top:0">Não achou aqui?</h2>
+  <p class="fraco" style="font-size:13px;margin-top:-2px">
+    Você ainda pode procurar no navegador e colar o link na fila, ou tirar
+    foto da peça na prateleira — que é o caminho que nunca depende de
+    ninguém.
+  </p>
+  <a class="botao secundario" href="/fila/{{ lote_id }}"
+     style="font-size:15px;padding:11px 18px">Voltar e tirar foto</a>
+</div>
+
+{% endblock %}

@@ -22,6 +22,7 @@ from app.ml import oauth
 from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
                             escolher_publicavel)
+from app import busca as mod_busca
 from app import loja
 from app.extrator import fontes_permitidas
 from app import fotos as mod_fotos
@@ -455,6 +456,73 @@ async def autorizar_fonte(dominio: str = Form(...), observacao: str = Form(""),
 async def remover_fonte(dominio: str = Form(...)):
     storage.remover_fonte(dominio)
     return RedirectResponse("/fontes", status_code=303)
+
+
+@app.get("/sites", response_class=HTMLResponse)
+async def sites(request: Request, erro: str = ""):
+    """Onde o sistema procura a peça quando ninguém tem o link.
+
+    Separado de /fontes de propósito: aqui é *onde procurar*, lá é *de quem
+    a Águia tem direito de usar a foto*. Cadastrar um site aqui não autoriza
+    imagem nenhuma.
+    """
+    return templates.TemplateResponse(request, "sites.html", {
+        "request": request,
+        "sites": storage.listar_sites_busca(),
+        "autorizados": sorted(d for d in storage.dominios_autorizados()
+                              if d != "*"),
+        "api_ativa": bool((s.busca_api_key or "").strip()),
+        "api_provedor": s.busca_api_provedor,
+        "erro": erro,
+    })
+
+
+@app.post("/sites")
+async def acrescentar_site(padrao: str = Form(...), nome: str = Form(""),
+                           voltar_para: str = Form("")):
+    try:
+        storage.acrescentar_site_busca(padrao, nome)
+    except ValueError as exc:
+        return RedirectResponse(f"/sites?erro={quote(str(exc))}", status_code=303)
+    return RedirectResponse(voltar_para or "/sites", status_code=303)
+
+
+@app.post("/sites/remover")
+async def remover_site(site_id: int = Form(...)):
+    storage.remover_site_busca(site_id)
+    return RedirectResponse("/sites", status_code=303)
+
+
+@app.post("/sites/alternar")
+async def alternar_site(site_id: int = Form(...)):
+    storage.alternar_site_busca(site_id)
+    return RedirectResponse("/sites", status_code=303)
+
+
+@app.post("/itens/{item_id}/buscar-na-internet", response_class=HTMLResponse)
+async def buscar_na_internet(request: Request, item_id: int,
+                             lote_id: int = Form(...)):
+    """Procura a peça sozinho e mostra as páginas candidatas.
+
+    Existe porque o extrator (colar o link) só ajudava quem já tinha achado
+    o link. Aqui o sistema faz a parte chata: consulta a busca interna dos
+    sites conhecidos pelo código do ERP e devolve o que parece ser a peça.
+
+    Nada é aproveitado automaticamente. Cada candidato leva para a mesma tela
+    de ficha de sempre, onde a pessoa compara e decide.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        raise HTTPException(404, "Peça não encontrada.")
+
+    contexto = " ".join(t for t in (linha["descricao_erp"] or "",
+                                    linha["marca"] or "") if t).strip()
+    resultado = await mod_busca.buscar(linha["sku"] or "", contexto)
+
+    return templates.TemplateResponse(request, "candidatos.html", {
+        "request": request, "lote_id": lote_id, "item": linha,
+        "resultado": resultado,
+    })
 
 
 @app.get("/lotes/{lote_id}/decididas", response_class=HTMLResponse)
