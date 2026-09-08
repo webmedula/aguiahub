@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block titulo %}Esteira — processar a lista inteira{% endblock %}
+{% block conteudo %}
+
+{% if rodando %}
+<meta http-equiv="refresh" content="8">
+{% endif %}
+
+{% set e = execucao %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Esteira</h2>
+    <div class="fraco" style="font-size:13px">
+      Processa a lista inteira sozinha: cruza com a loja da Águia, procura o
+      código nos sites cadastrados, lê a ficha e aproveita o que a licença
+      permite. <strong>Não publica nada.</strong>
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+{% if rodando %}
+{% set feitos = e['processados'] or 0 %}
+{% set total = e['total'] or 0 %}
+<div class="card" style="border-color:rgba(47,109,246,.5)">
+  <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+    <div>
+      <div class="fraco" style="font-size:13px">Processando</div>
+      <div style="font-size:26px;font-weight:600">{{ feitos }}<span class="fraco"
+        style="font-size:16px"> de {{ total }}</span></div>
+    </div>
+    <div style="flex:1;min-width:220px">
+      <div style="height:10px;background:#11141a;border-radius:6px;overflow:hidden">
+        <div style="height:100%;background:var(--azul);transition:width .4s;
+             width:{{ (feitos / total * 100) if total else 0 }}%"></div>
+      </div>
+      <div class="fraco" style="font-size:12px;margin-top:6px">
+        A tela se atualiza sozinha. Pode fechar e voltar depois — a esteira
+        continua rodando no servidor.
+        {% if e['status'] == 'parando' %}
+          <strong>Parando ao terminar a peça atual…</strong>
+        {% endif %}
+      </div>
+    </div>
+    {% if e['status'] == 'rodando' %}
+    <form method="post" action="/lotes/{{ lote_id }}/esteira/parar">
+      <button class="secundario" type="submit">Parar</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if e %}
+<div class="card">
+  <h2>{{ 'Andamento' if rodando else 'Última passagem' }}
+    <span class="fraco" style="font-weight:400">·
+      {{ (e['iniciado_em'] or '')[:16]|replace('T', ' ') }}
+      {% if not rodando %}· {{ e['status'] }}{% endif %}</span></h2>
+
+  <div class="grid">
+    <div class="metrica">
+      <div class="v" style="color:#5fd39b">{{ (e['prontas'] or 0) + (e['da_loja'] or 0) }}</div>
+      <div class="r">prontas para publicar</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ e['enriquecidas'] or 0 }}</div>
+      <div class="r">com dados novos, falta foto</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ e['com_candidatos'] or 0 }}</div>
+      <div class="r">achou páginas, código não bateu</div>
+    </div>
+    <div class="metrica">
+      <div class="v">{{ e['sem_resultado'] or 0 }}</div>
+      <div class="r">nenhum site conhecido tem</div>
+    </div>
+  </div>
+
+  {% if e['mensagem'] %}
+  <p class="fraco" style="font-size:13px;margin-bottom:0">{{ e['mensagem'] }}</p>
+  {% endif %}
+
+  {% if (e['prontas'] or 0) + (e['da_loja'] or 0) %}
+  <div style="margin-top:14px">
+    <a class="botao" href="/lotes/{{ lote_id }}/prontas">Ver e publicar as prontas</a>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if not rodando %}
+<div class="card">
+  <h2>{{ 'Rodar de novo' if e else 'Soltar a esteira' }}</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Ela pega as peças que ainda estão na fila, da mais cara para a mais
+    barata, e faz sozinha o que hoje é feito clique a clique. Peça que já
+    passou pela esteira é pulada — se o servidor reiniciar no meio, é só
+    soltar de novo que ela continua de onde parou.
+  </p>
+
+  <form method="post" action="/lotes/{{ lote_id }}/esteira"
+        style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+    <div>
+      <label for="limite">Quantas peças</label>
+      <select id="limite" name="limite" style="font-size:15px;padding:10px">
+        <option value="50">as 50 de maior valor (teste rápido)</option>
+        <option value="200" selected>as 200 de maior valor</option>
+        <option value="0">a fila inteira</option>
+      </select>
+    </div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;
+                  color:var(--txt);margin-bottom:9px">
+      <input type="checkbox" name="reprocessar" value="1"
+             style="width:auto"> refazer as que já passaram
+    </label>
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Processar agora</button>
+  </form>
+
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Cada peça leva alguns segundos (são requisições a sites de terceiros, uma
+    de cada vez para não ser bloqueado). A fila inteira leva horas — por isso
+    a esteira roda no servidor e não na sua tela.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Onde ela procura, e de quem pode usar foto</h2>
+  <table>
+    <tr>
+      <th style="width:200px">Sites onde procurar</th>
+      <td>
+        {% if sites %}
+          {% for s in sites %}<span class="pill neutro"
+            style="margin-right:6px">{{ s['nome'] }}</span>{% endfor %}
+        {% else %}
+          <span style="color:#e3b45c">Nenhum — a esteira não tem onde
+          procurar.</span>
+        {% endif %}
+        <div class="fraco" style="font-size:12px;margin-top:6px">
+          <a href="/sites">cadastrar sites de busca →</a>
+        </div>
+      </td>
+    </tr>
+    <tr>
+      <th>Podem ceder foto</th>
+      <td>
+        {% if fontes %}
+          {% for f in fontes %}<span class="pill ok"
+            style="margin-right:6px">{{ f }}</span>{% endfor %}
+        {% else %}
+          <span style="color:#e3b45c">Nenhum domínio autorizado.</span>
+        {% endif %}
+        <div class="fraco" style="font-size:12px;margin-top:6px">
+          <a href="/fontes">autorizar marcas →</a>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="aviso" style="margin-top:14px;margin-bottom:0">
+    <strong>É esta lista que decide quantas peças saem prontas sozinhas.</strong>
+    A esteira só aproveita foto de domínio autorizado — de qualquer outro site
+    ela traz apenas o dado técnico, e a peça continua esperando foto do
+    estoque. Quanto mais marcas que a Águia representa estiverem em
+    <a href="/fontes">/fontes</a>, menos peça sobra para fotografar.
+  </div>
+</div>
+
+{% if sem_foto %}
+<div class="card">
+  <h2>Já passaram pela esteira e continuam na fila
+    <span class="fraco" style="font-weight:400">· {{ sem_foto|length }} peça(s),
+      da mais cara para a mais barata</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Estas precisam de foto (ou de um olhar seu). Os links que a esteira
+    encontrou ficam aqui do lado — não precisa procurar de novo.
+  </p>
+  <table>
+    <tr>
+      <th>Peça</th>
+      <th style="width:230px">O que a esteira achou</th>
+      <th style="width:210px">Páginas encontradas</th>
+      <th class="num" style="width:110px">Valor parado</th>
+      <th style="width:90px"></th>
+    </tr>
+    {% for it in sem_foto[:60] %}
+    <tr>
+      <td>
+        <div>{{ (it['descricao_erp'] or it['titulo'] or '')[:70] }}</div>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ it['sku'] }}</div>
+        {% if it['aplicacao'] %}
+        <div class="fraco" style="font-size:11px">{{ it['aplicacao'][:80] }}</div>
+        {% endif %}
+      </td>
+      <td class="fraco" style="font-size:12px">{{ (it['esteira_resultado'] or '')[:140] }}</td>
+      <td>
+        {% for c in (it['candidatos'] | fromjson)[:3] %}
+        <div style="font-size:11px;margin-bottom:3px">
+          <a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.dominio }}</a>
+          {% if c.confere %}<span class="pill ok"
+            style="font-size:10px;padding:1px 6px">código bate</span>{% endif %}
+        </div>
+        {% else %}
+        <span class="fraco" style="font-size:11px">—</span>
+        {% endfor %}
+      </td>
+      <td class="num">R$ {{ '%.2f'|format(it['valor'] or 0) }}</td>
+      <td>
+        <a href="/itens/{{ it['id'] }}/preparar?lote_id={{ lote_id }}"
+           style="font-size:12px">abrir</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if sem_foto|length > 60 %}
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Mostrando as 60 de maior valor de {{ sem_foto|length }}.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

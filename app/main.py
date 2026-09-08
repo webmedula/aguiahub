@@ -23,6 +23,7 @@ from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
                             escolher_publicavel)
 from app import busca as mod_busca
+from app import esteira as mod_esteira
 from app import loja
 from app.extrator import fontes_permitidas
 from app import fotos as mod_fotos
@@ -125,6 +126,14 @@ async def entrar(request: Request, senha: str = Form(...)):
 def _startup() -> None:
     storage.init_db()
     log.info("Águiahub v%s (%s) iniciando", VERSAO, LANCADA_EM)
+    # A esteira vive num task em memória. Se o container caiu no meio de uma
+    # execução, a linha ficou marcada como 'rodando' e travaria a tela e o
+    # botão de soltar outra. Aqui é o único momento em que dá para afirmar,
+    # com certeza, que nenhuma esteira deste processo está rodando.
+    orfas = storage.encerrar_execucoes_orfas()
+    if orfas:
+        log.warning("%s execução(ões) da esteira ficaram órfãs do container "
+                    "anterior e foram encerradas", orfas)
     for problema in s.validate():
         log.warning("Configuração: %s", problema)
 
@@ -428,6 +437,45 @@ async def prontas(request: Request, lote_id: int):
         "valor_total": sum(float(i["valor"] or 0) for i in itens),
         "resultado": None,
     })
+
+
+@app.get("/lotes/{lote_id}/esteira", response_class=HTMLResponse)
+async def ver_esteira(request: Request, lote_id: int):
+    """Tela da esteira: solta o processamento em massa e acompanha o andamento."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    return templates.TemplateResponse(request, "esteira.html", {
+        "request": request, "lote_id": lote_id,
+        **mod_esteira.resumo_para_tela(lote_id),
+    })
+
+
+@app.post("/lotes/{lote_id}/esteira")
+async def iniciar_esteira(lote_id: int, limite: int = Form(0),
+                          reprocessar: str = Form("")):
+    """Solta a esteira no lote. Ela roda em segundo plano por horas.
+
+    Não publica nada: termina em "pronta para publicar" e quem manda para o
+    Mercado Livre continua sendo a pessoa, na tela de prontas.
+    """
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    if storage.esteira_rodando(lote_id):
+        # Duas esteiras no mesmo lote dobrariam a bateção de porta nos sites
+        # alheios e embaralhariam a contagem da tela.
+        return RedirectResponse(f"/lotes/{lote_id}/esteira", status_code=303)
+
+    mod_esteira.iniciar_em_segundo_plano(lote_id, limite, bool(reprocessar))
+    return RedirectResponse(f"/lotes/{lote_id}/esteira", status_code=303)
+
+
+@app.post("/lotes/{lote_id}/esteira/parar")
+async def parar_esteira(lote_id: int):
+    """Pede para a esteira parar — ela para entre uma peça e outra."""
+    atual = storage.ultima_execucao(lote_id)
+    if atual and atual["status"] in ("rodando", "parando"):
+        storage.pedir_parada(atual["id"])
+    return RedirectResponse(f"/lotes/{lote_id}/esteira", status_code=303)
 
 
 @app.get("/fontes", response_class=HTMLResponse)

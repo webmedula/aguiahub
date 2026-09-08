@@ -5,6 +5,85 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.25.0 — 08/09/2026
+
+**A esteira: o sistema trabalha a lista sozinho.**
+
+Pedido do João, depois de olhar um anúncio publicado: *"a questão maior é
+pegar a lista e realmente automatizar de forma que fique mais fácil gerar os
+anúncios a partir da lista da planilha"*.
+
+Até aqui todas as peças do quebra-cabeça existiam — cruzamento com a loja
+(v0.16), extrator de ficha (v0.20), fontes autorizadas (v0.22), pré-anúncio
+(v0.23), busca na internet (v0.24) — mas **cada uma exigia um clique humano,
+peça por peça**. Isso é razoável para dez peças e impossível para 1.687. O
+gargalo nunca foi a capacidade do sistema; era a quantidade de cliques.
+
+Agora tem `/lotes/{id}/esteira`: um botão que solta o processamento em massa
+no servidor. Para cada peça da fila, da mais cara para a mais barata, ela faz
+sozinha exatamente o que a pessoa fazia à mão:
+
+1. cruza o lote com a loja da Águia (foto própria, sem questão de licença);
+2. procura o código nos sites cadastrados em `/sites`;
+3. lê a ficha dos candidatos mais promissores;
+4. confere se o **código bate de verdade** dentro da ficha;
+5. aproveita só o que a licença permite:
+   - domínio autorizado em `/fontes` → ficha, fotos e descrição, e a peça sai
+     **pronta para publicar**;
+   - qualquer outro site → só o **fato técnico** (aplicação, marca), que é da
+     peça e não tem dono; a foto continua esperando a câmera do estoque.
+
+### As três travas que ela não contorna
+
+- **Não publica nada.** Termina em "pronta para publicar"; quem manda para o
+  Mercado Livre continua sendo a pessoa, na tela de prontas. Publicação
+  automática em 1.687 peças transformaria um casamento errado num estrago
+  irreparável na conta real da Águia Parts. Há teste lendo o código-fonte do
+  módulo para garantir que nenhuma função de publicar entrou ali.
+- **Não adivinha peça.** Só aproveita quando o código do ERP aparece na ficha
+  do site. Nome parecido não vale — é a regra que existe desde que um corpo
+  distribuidor casou com um livro na v0.4.0, e ela pesa mais ainda quando não
+  há ninguém olhando.
+- **Não usa foto de quem não autorizou.** A esteira chama as mesmas funções
+  que a tela usa; a lista de `/fontes` continua sendo a única porta.
+
+### O que sobra para a pessoa
+
+Para cada peça que a esteira não resolveu, ela **guarda os links que
+encontrou** e diz por que parou ("achei 4 páginas, mas o código não apareceu
+na ficha de nenhuma"). A tela mostra essa lista ordenada por valor parado,
+com o link do lado. É a diferença entre *"1.687 peças para pesquisar"* e
+*"120 peças para fotografar, com a página já aberta"*.
+
+### Detalhes que decidem se isso funciona no VPS
+
+- **Retomável.** Peça que já passou é pulada. Se o EasyPanel reiniciar o
+  container no meio (a execução leva horas), é só soltar de novo.
+- **Execução órfã é encerrada no start.** A esteira vive num task em memória:
+  sem essa limpeza, um container derrubado deixaria a tela mostrando uma
+  esteira fantasma para sempre e travaria o botão de soltar outra.
+- **Três peças por vez, teto de tempo por peça, e botão de parar.** São
+  requisições a sites de terceiros: ser educado aqui é o que evita o IP do
+  VPS ser bloqueado no meio das 1.687.
+- **Falha isolada.** Loja fora do ar, site pendurado ou ficha ilegível
+  derrubam aquela peça, não a esteira.
+- **Começar pequeno.** A tela oferece rodar nas 50 ou 200 de maior valor
+  antes de soltar na fila inteira.
+
+### O gargalo verdadeiro, dito na cara
+
+A tela mostra, lado a lado, **onde ela procura** e **de quem pode usar foto** —
+porque é a segunda lista que decide quantas peças saem prontas sozinhas. Com
+um domínio autorizado, a esteira traz ficha técnica de muita coisa e foto de
+quase nada. Cada marca que a Águia representa e cadastra em `/fontes` vira
+peça a menos para fotografar.
+
+Vinte e dois testes novos, 215 no total. Um deles nasceu de um bug que só o
+teste ponta a ponta pegou: a limpeza de execuções órfãs tinha SQL inválido e
+derrubava a aplicação no start — o pytest passava, e o deploy não subiria.
+
+---
+
 ## v0.24.0 — 27/08/2026
 
 **O sistema procura a peça na internet sozinho.**

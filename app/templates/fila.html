@@ -97,6 +97,20 @@
   </form>
 </div>
 
+<div class="card" style="padding:20px;display:flex;gap:14px;align-items:center;
+     flex-wrap:wrap;border-color:rgba(47,109,246,.45)">
+  <div style="flex:1;min-width:260px">
+    <strong>Esteira — deixar o sistema trabalhar a lista sozinho</strong>
+    <div class="fraco" style="font-size:13px">
+      Faz peça por peça o que você faria clicando: cruza com a loja, procura o
+      código nos sites cadastrados, lê a ficha e aproveita o que a licença
+      permite. Roda no servidor, por horas se precisar. Não publica nada.
+    </div>
+  </div>
+  <a class="botao" href="/lotes/{{ lote['id'] }}/esteira"
+     style="font-size:15px;padding:11px 18px">Abrir a esteira</a>
+</div>
+
 {% if not item %}
 <div class="card" style="text-align:center;padding:40px">
   <h2 style="font-size:20px">Acabou a fila</h2>

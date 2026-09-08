@@ -74,6 +74,28 @@ CREATE TABLE IF NOT EXISTS sites_busca (
     criado_em  TEXT NOT NULL
 );
 
+-- Cada vez que a esteira (app/esteira.py) é solta no lote. Fica no banco, e
+-- não em memória, porque a esteira roda por horas: se o EasyPanel reiniciar o
+-- container no meio, a tela precisa continuar sabendo o que já foi feito em
+-- vez de fingir que nada aconteceu.
+CREATE TABLE IF NOT EXISTS esteira_execucoes (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    lote_id        INTEGER NOT NULL,
+    -- rodando | parando | parada | terminada | erro
+    status         TEXT NOT NULL DEFAULT 'rodando',
+    total          INTEGER NOT NULL DEFAULT 0,
+    processados    INTEGER NOT NULL DEFAULT 0,
+    da_loja        INTEGER NOT NULL DEFAULT 0,
+    prontas        INTEGER NOT NULL DEFAULT 0,
+    enriquecidas   INTEGER NOT NULL DEFAULT 0,
+    com_candidatos INTEGER NOT NULL DEFAULT 0,
+    sem_resultado  INTEGER NOT NULL DEFAULT 0,
+    falhas         INTEGER NOT NULL DEFAULT 0,
+    mensagem       TEXT,
+    iniciado_em    TEXT NOT NULL,
+    terminado_em   TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_itens_lote ON itens(lote_id);
 -- Impede republicar o mesmo SKU por engano em execuções repetidas.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_itens_sku_publicado
@@ -118,6 +140,14 @@ _MIGRACOES = {
         # não são nossos para editar.
         "titulo_editado":     "TEXT",
         "descricao_editada":  "TEXT",
+        # Passagem da peça pela esteira (app/esteira.py): quando foi, o que
+        # saiu de lá, e as páginas candidatas encontradas. Guardar os
+        # candidatos é o que evita a pessoa refazer a busca à mão numa peça
+        # que a esteira já procurou — ela abre a lista e clica na ficha.
+        "esteira_em":         "TEXT",
+        "esteira_rotulo":     "TEXT",
+        "esteira_resultado":  "TEXT",
+        "candidatos":         "TEXT",
     },
 }
 
@@ -734,3 +764,150 @@ def gravar_padrao_descoberto(site_id: int, endereco: str) -> None:
                          (endereco, int(site_id)))
     except sqlite3.Error:
         pass        # cache; falhar aqui não pode derrubar a busca
+
+
+# ---------------------------------------------------------------------------
+# Esteira — processamento em massa do lote (app/esteira.py)
+# ---------------------------------------------------------------------------
+
+def itens_para_esteira(lote_id: int, limite: int = 0,
+                       reprocessar: bool = False) -> list[sqlite3.Row]:
+    """As peças que a esteira deve processar, da mais cara para a mais barata.
+
+    Só entra o que ainda está na fila: peça já pronta, já publicada ou
+    descartada não tem o que ganhar com uma busca na internet.
+
+    Por padrão pula quem já passou pela esteira antes. É o que torna a
+    execução **retomável**: se o container reiniciar no meio das 1.687, basta
+    soltar de novo que ela continua de onde parou, sem repetir requisição em
+    site alheio à toa.
+    """
+    where = ["lote_id = ?", "status = 'na_fila'"]
+    params: list = [lote_id]
+    if not reprocessar:
+        where.append("(esteira_em IS NULL OR esteira_em = '')")
+
+    sql = (f"SELECT * FROM itens WHERE {' AND '.join(where)} "
+           "ORDER BY valor DESC, linha ASC")
+    if limite and limite > 0:
+        sql += " LIMIT ?"
+        params.append(int(limite))
+
+    with conexao() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def marcar_esteira(item_id: int, rotulo: str, resultado: str,
+                   candidatos: list[dict]) -> None:
+    """Grava o que a esteira fez com a peça, inclusive quando não fez nada.
+
+    Guardar o "não achei" é tão importante quanto guardar o achado: é o que
+    impede a esteira de bater no mesmo site pela mesma peça na próxima
+    execução, e é o que a tela usa para montar a lista do que sobrou.
+    """
+    with conexao() as conn:
+        conn.execute(
+            """UPDATE itens
+               SET esteira_em = ?, esteira_rotulo = ?, esteira_resultado = ?,
+                   candidatos = ?, atualizado_em = ?
+               WHERE id = ?""",
+            (datetime.now(timezone.utc).isoformat(), rotulo, (resultado or "")[:500],
+             json.dumps(candidatos or [], ensure_ascii=False),
+             datetime.now(timezone.utc).isoformat(), item_id))
+
+
+def itens_da_esteira(lote_id: int, limite: int = 200) -> list[sqlite3.Row]:
+    """O que a esteira processou e continua na fila — a lista de trabalho.
+
+    São as peças que precisam de foto (ou de olho humano). Vêm ordenadas por
+    valor parado: fotografar a peça de R$ 47 mil antes da de R$ 80 é a única
+    ordem que faz sentido para quem tem R$ 2,4 milhões parados.
+    """
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM itens
+               WHERE lote_id = ? AND status = 'na_fila'
+                 AND esteira_em IS NOT NULL AND esteira_em <> ''
+               ORDER BY valor DESC, linha ASC LIMIT ?""",
+            (lote_id, int(limite))).fetchall()
+
+
+def criar_execucao(lote_id: int, total: int) -> int:
+    with conexao() as conn:
+        cur = conn.execute(
+            """INSERT INTO esteira_execucoes (lote_id, total, iniciado_em)
+               VALUES (?, ?, ?)""",
+            (lote_id, int(total), datetime.now(timezone.utc).isoformat()))
+        return int(cur.lastrowid)
+
+
+_CAMPOS_EXECUCAO = {"status", "total", "processados", "da_loja", "prontas",
+                    "enriquecidas", "com_candidatos", "sem_resultado",
+                    "falhas", "mensagem", "terminado_em"}
+
+
+def atualizar_execucao(execucao_id: int, **campos) -> None:
+    campos = {k: v for k, v in campos.items() if k in _CAMPOS_EXECUCAO}
+    if not campos:
+        return
+    sets = ", ".join(f"{k} = ?" for k in campos)
+    with conexao() as conn:
+        conn.execute(f"UPDATE esteira_execucoes SET {sets} WHERE id = ?",
+                     (*campos.values(), execucao_id))
+
+
+def execucao(execucao_id: int) -> sqlite3.Row | None:
+    with conexao() as conn:
+        return conn.execute("SELECT * FROM esteira_execucoes WHERE id = ?",
+                            (execucao_id,)).fetchone()
+
+
+def ultima_execucao(lote_id: int) -> sqlite3.Row | None:
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM esteira_execucoes WHERE lote_id = ?
+               ORDER BY id DESC LIMIT 1""", (lote_id,)).fetchone()
+
+
+def esteira_rodando(lote_id: int) -> bool:
+    """Impede soltar duas esteiras no mesmo lote — dobraria a bateção de porta
+    nos sites alheios e embaralharia a contagem da tela."""
+    linha = ultima_execucao(lote_id)
+    return bool(linha and linha["status"] in ("rodando", "parando"))
+
+
+def pedir_parada(execucao_id: int) -> None:
+    """Pede para a esteira parar. Ela para entre uma peça e outra, nunca no
+    meio de uma — parar no meio deixaria a peça sem registro do que aconteceu."""
+    with conexao() as conn:
+        conn.execute(
+            """UPDATE esteira_execucoes SET status = 'parando'
+               WHERE id = ? AND status = 'rodando'""", (execucao_id,))
+
+
+def execucao_parando(execucao_id: int) -> bool:
+    linha = execucao(execucao_id)
+    return bool(linha and linha["status"] == "parando")
+
+
+def encerrar_execucoes_orfas() -> int:
+    """Fecha execuções que ficaram como 'rodando' de um container anterior.
+
+    A esteira vive num task em memória: quando o EasyPanel reinicia o
+    container no meio de uma execução, o task morre mas a linha no banco
+    continua dizendo 'rodando'. Sem esta limpeza, a tela mostraria uma esteira
+    fantasma para sempre e o botão de soltar outra ficaria travado.
+
+    Chamada no start da aplicação, quando é certeza que nenhuma esteira deste
+    processo está rodando ainda.
+    """
+    recado = ("Interrompida por reinício do servidor — solte de novo que ela "
+              "continua de onde parou.")
+    with conexao() as conn:
+        cur = conn.execute(
+            """UPDATE esteira_execucoes
+               SET status = 'parada', terminado_em = ?,
+                   mensagem = TRIM(COALESCE(mensagem, '') || ' ' || ?)
+               WHERE status IN ('rodando', 'parando')""",
+            (datetime.now(timezone.utc).isoformat(), recado))
+        return cur.rowcount
