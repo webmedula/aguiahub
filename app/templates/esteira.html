@@ -21,6 +21,18 @@
      href="/fila/{{ lote_id }}">Voltar para a fila</a>
 </div>
 
+<div class="card" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:260px">
+    <strong>Antes de rodar: mediu de onde viria a foto?</strong>
+    <div class="fraco" style="font-size:13px">
+      A esteira só consegue deixar pronta a peça que tem foto disponível. A
+      medição diz quantas são, sem mudar nada.
+    </div>
+  </div>
+  <a class="botao secundario" style="padding:11px 18px"
+     href="/lotes/{{ lote_id }}/cobertura">Ver a medição</a>
+</div>
+
 {% if rodando %}
 {% set feitos = e['processados'] or 0 %}
 {% set total = e['total'] or 0 %}

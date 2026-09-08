@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block titulo %}De onde viria a foto{% endblock %}
+{% block conteudo %}
+
+{% if rodando %}<meta http-equiv="refresh" content="10">{% endif %}
+
+{% set rotulos = {
+  'catalogo': ('catálogo do ML — sem precisar de foto', 'ok'),
+  'loja': ('loja da Águia — foto nossa', 'ok'),
+  'precisa_foto': ('precisa de foto', 'alerta'),
+  'erro': ('não deu para consultar', 'erro'),
+} %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">De onde viria a foto</h2>
+    <div class="fraco" style="font-size:13px">
+      Um anúncio precisa de foto. Esta medição responde, numa amostra da fila,
+      quantas peças conseguiriam foto sozinhas — e quantas dependem da câmera
+      do estoque. <strong>Não muda nada:</strong> nenhum status, nenhum anúncio.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+</div>
+
+{% if rodando %}
+<div class="card" style="border-color:rgba(47,109,246,.5)">
+  <h2 style="margin:0">Medindo…</h2>
+  <p class="fraco" style="margin:6px 0 0;font-size:13px">
+    São {{ medicao['amostra'] }} consultas ao catálogo do Mercado Livre, uma
+    de cada vez para não tomar bloqueio. Leva alguns minutos. A tela se
+    atualiza sozinha — pode fechar e voltar depois.
+  </p>
+</div>
+{% endif %}
+
+{% if r and r.get('erro') %}
+<div class="card" style="border-color:rgba(208,69,63,.5)">
+  <h2>A medição não completou</h2>
+  <p class="fraco" style="margin:0">{{ r['erro'] }}</p>
+</div>
+{% elif r %}
+
+{% set proj = r['projecao_total'] %}
+{% set catalogo = proj.get('catalogo', 0) %}
+{% set loja = proj.get('loja', 0) %}
+{% set foto = proj.get('precisa_foto', 0) %}
+{% set sozinhas = catalogo + loja %}
+
+<div class="card" style="border-color:rgba(46,163,107,.5)">
+  <h2>Resposta</h2>
+  <p style="font-size:17px;margin-top:0">
+    De <strong>{{ r['total_fila'] }}</strong> peças paradas na fila, cerca de
+    <strong style="color:#5fd39b">{{ sozinhas }}</strong> conseguiriam virar
+    anúncio <strong>sem ninguém tirar foto</strong>, e cerca de
+    <strong style="color:#e3b45c">{{ foto }}</strong> dependem da câmera do
+    estoque.
+  </p>
+  <div class="grid" style="margin-top:16px">
+    <div class="metrica">
+      <div class="v" style="color:#5fd39b">{{ catalogo }}</div>
+      <div class="r">herdam foto do catálogo do ML</div>
+    </div>
+    <div class="metrica">
+      <div class="v" style="color:#5fd39b">{{ loja }}</div>
+      <div class="r">têm foto na loja da Águia</div>
+    </div>
+    <div class="metrica">
+      <div class="v" style="color:#e3b45c">{{ foto }}</div>
+      <div class="r">precisam de foto do estoque</div>
+    </div>
+    {% if proj.get('erro') %}
+    <div class="metrica">
+      <div class="v">{{ proj['erro'] }}</div>
+      <div class="r">o ML não respondeu</div>
+    </div>
+    {% endif %}
+  </div>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Projeção a partir de {{ r['medidas'] }} peças consultadas de verdade,
+    sorteadas em cada faixa de preço. Medido em
+    {{ r['medido_em'][:16]|replace('T', ' ') }}.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Por faixa de preço <span class="fraco" style="font-weight:400">·
+      é aqui que a decisão muda</span></h2>
+  <table>
+    <tr>
+      <th>Faixa</th>
+      <th class="num">Peças na fila</th>
+      <th class="num">Valor parado</th>
+      <th class="num">Sem precisar de foto</th>
+      <th class="num">Precisam de foto</th>
+      <th class="num">Amostra</th>
+    </tr>
+    {% for chave, f in r['por_faixa'].items() %}
+    {% set p = f['projecao'] %}
+    {% set sem_foto = p.get('catalogo', 0) + p.get('loja', 0) %}
+    <tr>
+      <td>{{ f['rotulo'] }}</td>
+      <td class="num">{{ f['na_fila'] }}</td>
+      <td class="num">R$ {{ '%.2f'|format(f['valor_parado']) }}</td>
+      <td class="num" style="color:#5fd39b">{{ sem_foto }}</td>
+      <td class="num" style="color:#e3b45c">{{ p.get('precisa_foto', 0) }}</td>
+      <td class="num fraco">{{ f['medidas'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    A loja da Águia tem {{ r['produtos_na_loja'] }} produtos no catálogo
+    consultado.
+    {% if r['erro_loja'] %}
+      <span style="color:#e3b45c">A loja não respondeu nesta medição
+      ({{ r['erro_loja'] }}), então a coluna dela está subestimada.</span>
+    {% endif %}
+  </p>
+</div>
+
+{% if r['exemplos_catalogo'] %}
+<div class="card">
+  <h2>Exemplos que sairiam sem foto nenhuma</h2>
+  <table>
+    <tr><th>Peça</th><th>Casou com</th><th class="num">Preço</th></tr>
+    {% for e in r['exemplos_catalogo'] %}
+    <tr>
+      <td>{{ e['descricao'] }}
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ e['sku'] }}</div></td>
+      <td class="fraco" style="font-size:12px">{{ e['motivo'] }}</td>
+      <td class="num">R$ {{ '%.2f'|format(e['preco']) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Confira dois ou três: casamento errado com o catálogo é o pior erro
+    possível aqui, e nenhum número justifica anunciar peça trocada.
+  </p>
+</div>
+{% endif %}
+
+{% if r['exemplos_precisa_foto'] %}
+<div class="card">
+  <h2>As mais caras que dependem de foto
+    <span class="fraco" style="font-weight:400">· começaria por estas</span></h2>
+  <table>
+    <tr><th>Peça</th><th>Por quê</th><th class="num">Valor parado</th></tr>
+    {% for e in r['exemplos_precisa_foto'] %}
+    <tr>
+      <td>{{ e['descricao'] }}
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ e['sku'] }}</div></td>
+      <td class="fraco" style="font-size:12px">{{ e['motivo'] }}</td>
+      <td class="num">R$ {{ '%.2f'|format(e['valor']) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endif %}
+
+{% if not rodando %}
+<div class="card">
+  <h2>{{ 'Medir de novo' if r else 'Medir agora' }}</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Vale repetir depois de autorizar marcas novas em <a href="/fontes">/fontes</a>
+    ou de cadastrar sites em <a href="/sites">/sites</a> — a resposta muda.
+    Hoje há {{ fontes|length }} domínio(s) autorizado(s) a ceder foto.
+  </p>
+  <form method="post" action="/lotes/{{ lote_id }}/cobertura"
+        style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+    <div>
+      <label for="amostra">Tamanho da amostra</label>
+      <select id="amostra" name="amostra" style="font-size:15px;padding:10px">
+        <option value="60">60 peças (~2 min)</option>
+        <option value="150" selected>150 peças (~5 min, recomendado)</option>
+        <option value="300">300 peças (~10 min)</option>
+      </select>
+    </div>
+    <button type="submit" style="font-size:16px;padding:12px 20px">
+      Medir</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -5,6 +5,63 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.26.0 — 08/09/2026
+
+**Medir de onde viria a foto — a pendência mais antiga do projeto.**
+
+Contexto: 1.682 peças paradas na fila, 5 anúncios publicados. Conversando
+sobre o objetivo ("criar anúncios dos produtos que estão na lista"), ficou
+claro que o gargalo não é mais software. Um anúncio precisa de cinco coisas;
+quatro a planilha dá de graça e a quinta o ML adivinha. Sobra a **foto** — e é
+só nela que as 1.682 estão presas.
+
+A pergunta que decide o próximo mês de trabalho é: **quantas dessas peças
+conseguiriam foto sem ninguém fotografar?** Ela estava anotada como pendência
+desde a v0.1 ("medir a cobertura do catálogo") e nunca tinha sido respondida.
+
+Nova tela `/lotes/{id}/cobertura`. Ela consulta o catálogo do Mercado Livre e
+o catálogo da loja da Águia peça por peça, numa amostra, e responde:
+
+- quantas **herdam foto do catálogo do ML** (custo de foto: zero);
+- quantas **têm foto na loja da Águia** (foto nossa, sem licença de ninguém);
+- quantas **dependem da câmera do estoque**.
+
+E projeta para a fila inteira **faixa de preço por faixa de preço**, porque a
+taxa da peça de R$ 10 mil não vale para a de R$ 35 — e é exatamente essa
+diferença que decide o que vale a pena anunciar.
+
+### O que ela não faz
+
+**Não escreve nada.** Nenhum status muda, nenhuma peça fica "pronta", nada é
+publicado. Um diagnóstico que altera o diagnosticado não serve para decidir
+coisa nenhuma — e no meio de uma fila com R$ 2,4 milhões parados, decidir
+errado custa caro. Um teste lê o código-fonte do módulo e falha se qualquer
+função de escrita aparecer lá dentro.
+
+**Não consulta as 1.682.** Seriam milhares de requisições ao ML para responder
+o que uma amostra responde. São 150 peças por padrão (~7 pontos percentuais de
+margem, suficiente para distinguir 3% de 30%), **sorteadas dentro de cada
+faixa de preço** — sorteio simples pegaria quase só peça barata, já que 914
+das 1.687 estão abaixo de R$ 100, e responderia bem a pergunta que menos
+importa. O sorteio é reprodutível: a mesma fila dá a mesma amostra.
+
+### Detalhes
+
+- Roda em segundo plano, como a esteira: 150 consultas ao ML passam de
+  qualquer timeout de requisição. A tela se atualiza sozinha.
+- Loja fora do ar não derruba a medição — a coluna dela fica zerada e a tela
+  avisa que o número está subestimado.
+- A tela mostra exemplos concretos dos dois lados: peças que sairiam sem foto
+  (para conferir se o casamento com o catálogo está correto — casar peça
+  errada continua sendo o pior erro possível) e as mais caras que dependem de
+  foto, que é por onde começar a fotografar.
+- Vale repetir a medição depois de autorizar marcas novas em `/fontes`: a
+  resposta muda, e o histórico fica guardado para comparar.
+
+Dez testes novos, 225 no total.
+
+---
+
 ## v0.25.0 — 08/09/2026
 
 **A esteira: o sistema trabalha a lista sozinho.**

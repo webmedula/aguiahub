@@ -23,6 +23,7 @@ from app.ml.client import MLClient, MLApiError
 from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
                             escolher_publicavel)
 from app import busca as mod_busca
+from app import cobertura as mod_cobertura
 from app import esteira as mod_esteira
 from app import loja
 from app.extrator import fontes_permitidas
@@ -130,7 +131,7 @@ def _startup() -> None:
     # execução, a linha ficou marcada como 'rodando' e travaria a tela e o
     # botão de soltar outra. Aqui é o único momento em que dá para afirmar,
     # com certeza, que nenhuma esteira deste processo está rodando.
-    orfas = storage.encerrar_execucoes_orfas()
+    orfas = storage.encerrar_execucoes_orfas() + storage.encerrar_medicoes_orfas()
     if orfas:
         log.warning("%s execução(ões) da esteira ficaram órfãs do container "
                     "anterior e foram encerradas", orfas)
@@ -437,6 +438,40 @@ async def prontas(request: Request, lote_id: int):
         "valor_total": sum(float(i["valor"] or 0) for i in itens),
         "resultado": None,
     })
+
+
+@app.get("/lotes/{lote_id}/cobertura", response_class=HTMLResponse)
+async def ver_cobertura(request: Request, lote_id: int):
+    """Diagnóstico: de onde viria a foto de cada peça da fila.
+
+    Só leitura. Nenhum status muda, nada é publicado — é para decidir onde
+    investir esforço, e medição que altera o medido não decide nada.
+    """
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+
+    medicao = storage.ultima_medicao(lote_id)
+    resultado = None
+    if medicao and medicao["resultado"]:
+        resultado = json.loads(medicao["resultado"])
+
+    return templates.TemplateResponse(request, "cobertura.html", {
+        "request": request, "lote_id": lote_id, "medicao": medicao,
+        "rodando": bool(medicao and medicao["status"] == "rodando"),
+        "r": resultado,
+        "fontes": sorted(fontes_permitidas()),
+    })
+
+
+@app.post("/lotes/{lote_id}/cobertura")
+async def iniciar_cobertura(lote_id: int, amostra: int = Form(150)):
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+    if not storage.medicao_rodando(lote_id):
+        mod_cobertura.iniciar_em_segundo_plano(lote_id, amostra)
+    return RedirectResponse(f"/lotes/{lote_id}/cobertura", status_code=303)
 
 
 @app.get("/lotes/{lote_id}/esteira", response_class=HTMLResponse)

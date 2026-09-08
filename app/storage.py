@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS esteira_execucoes (
     terminado_em   TEXT
 );
 
+-- Medições de cobertura (app/cobertura.py): diagnóstico de onde viria a foto
+-- de cada peça. Guardadas porque a resposta muda quando marcas novas são
+-- autorizadas em /fontes — vale poder comparar a medição de hoje com a de
+-- daqui a um mês em vez de confiar na memória.
+CREATE TABLE IF NOT EXISTS medicoes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    lote_id     INTEGER NOT NULL,
+    amostra     INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'rodando',
+    resultado   TEXT,
+    iniciado_em TEXT NOT NULL,
+    terminado_em TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_itens_lote ON itens(lote_id);
 -- Impede republicar o mesmo SKU por engano em execuções repetidas.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_itens_sku_publicado
@@ -910,4 +924,51 @@ def encerrar_execucoes_orfas() -> int:
                    mensagem = TRIM(COALESCE(mensagem, '') || ' ' || ?)
                WHERE status IN ('rodando', 'parando')""",
             (datetime.now(timezone.utc).isoformat(), recado))
+        return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Medições de cobertura (app/cobertura.py)
+# ---------------------------------------------------------------------------
+
+def criar_medicao(lote_id: int, amostra: int) -> int:
+    with conexao() as conn:
+        cur = conn.execute(
+            """INSERT INTO medicoes (lote_id, amostra, iniciado_em)
+               VALUES (?, ?, ?)""",
+            (lote_id, int(amostra), datetime.now(timezone.utc).isoformat()))
+        return int(cur.lastrowid)
+
+
+def gravar_medicao(medicao_id: int, status: str, resultado: dict) -> None:
+    with conexao() as conn:
+        conn.execute(
+            """UPDATE medicoes SET status = ?, resultado = ?, terminado_em = ?
+               WHERE id = ?""",
+            (status, json.dumps(resultado, ensure_ascii=False),
+             datetime.now(timezone.utc).isoformat(), medicao_id))
+
+
+def ultima_medicao(lote_id: int) -> sqlite3.Row | None:
+    with conexao() as conn:
+        return conn.execute(
+            """SELECT * FROM medicoes WHERE lote_id = ?
+               ORDER BY id DESC LIMIT 1""", (lote_id,)).fetchone()
+
+
+def medicao_rodando(lote_id: int) -> bool:
+    linha = ultima_medicao(lote_id)
+    return bool(linha and linha["status"] == "rodando")
+
+
+def encerrar_medicoes_orfas() -> int:
+    """Mesma história da esteira: medição vive em memória e o container cai."""
+    with conexao() as conn:
+        cur = conn.execute(
+            """UPDATE medicoes SET status = 'erro', terminado_em = ?,
+                   resultado = ?
+               WHERE status = 'rodando'""",
+            (datetime.now(timezone.utc).isoformat(),
+             json.dumps({"erro": "Interrompida por reinício do servidor."},
+                        ensure_ascii=False)))
         return cur.rowcount
