@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block titulo %}Peças da planilha{% endblock %}
+{% block conteudo %}
+
+{% macro qs(situacao=None, faixa=None, busca=None, pagina=None) -%}
+?situacao={{ situacao if situacao is not none else filtro.situacao }}
+&faixa={{ faixa if faixa is not none else filtro.faixa }}
+&busca={{ (busca if busca is not none else filtro.busca) | urlencode }}
+&pagina={{ pagina if pagina is not none else 1 }}
+{%- endmacro %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Peças da planilha</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ lote['arquivo'] }} · {{ lote['total_linhas'] }} linhas.
+      Marque as prontas e publique de uma vez, ou abra uma peça para resolver.
+    </div>
+  </div>
+  <a class="botao secundario" href="/lotes/{{ lote_id }}/esteira"
+     style="padding:10px 16px">Buscar dados sozinho</a>
+</div>
+
+<div class="card">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <a href="/lotes/{{ lote_id }}/lista{{ qs(situacao='') }}"
+       class="filtro {{ 'ativo' if not filtro.situacao }}">
+      todas <strong>{{ total if not filtro.situacao and not filtro.busca
+                        and not filtro.faixa else lote['total_linhas'] }}</strong></a>
+    {% for chave, meta in situacoes.items() %}
+      {% if contagem[chave]['itens'] %}
+      <a href="/lotes/{{ lote_id }}/lista{{ qs(situacao=chave) }}"
+         class="filtro {{ 'ativo' if filtro.situacao == chave }} f-{{ meta.cor }}">
+        {{ meta.rotulo }} <strong>{{ contagem[chave]['itens'] }}</strong></a>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  {% if filtro.situacao and situacoes.get(filtro.situacao) %}
+  <p class="fraco" style="font-size:13px;margin:12px 0 0">
+    {{ situacoes[filtro.situacao].ajuda }}</p>
+  {% endif %}
+
+  <form method="get" action="/lotes/{{ lote_id }}/lista"
+        style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+               margin-top:14px;padding-top:14px;border-top:1px solid var(--linha)">
+    <input type="hidden" name="situacao" value="{{ filtro.situacao }}">
+    <div style="flex:1;min-width:220px">
+      <label for="busca">Procurar por código, descrição ou aplicação</label>
+      <input id="busca" name="busca" value="{{ filtro.busca }}"
+             placeholder="ex.: 28447439 ou sprinter" style="width:100%;padding:9px">
+    </div>
+    <div>
+      <label for="faixa">Faixa de preço</label>
+      <select id="faixa" name="faixa" style="padding:9px">
+        <option value="">todas</option>
+        {% for chave, f in faixas.items() %}
+        <option value="{{ chave }}" {{ 'selected' if filtro.faixa == chave }}
+          >{{ f[0] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit" style="padding:10px 18px">Filtrar</button>
+    {% if filtro.busca or filtro.faixa %}
+    <a class="fraco" style="font-size:13px;padding-bottom:10px"
+       href="/lotes/{{ lote_id }}/lista{{ qs(busca='', faixa='') }}">limpar</a>
+    {% endif %}
+  </form>
+</div>
+
+{% if not linhas %}
+<div class="card" style="text-align:center;padding:40px">
+  <h2 style="font-size:18px">Nenhuma peça com esse filtro</h2>
+  <p class="fraco" style="margin-bottom:18px">Tente outro filtro, ou veja todas.</p>
+  <a class="botao" href="/lotes/{{ lote_id }}/lista">Ver todas as peças</a>
+</div>
+{% else %}
+
+<form method="post" action="/lotes/{{ lote_id }}/publicar-lote" id="formLista">
+<div class="card">
+  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+              margin-bottom:12px">
+    <button type="button" class="secundario" onclick="marcar(true)"
+            style="font-size:13px;padding:7px 13px">Marcar prontas desta página</button>
+    <button type="button" class="secundario" onclick="marcar(false)"
+            style="font-size:13px;padding:7px 13px">Desmarcar</button>
+    <span class="fraco" style="font-size:13px" id="contador"></span>
+    <button type="submit" id="botaoPublicar" disabled
+            style="margin-left:auto;font-size:15px;padding:10px 18px">
+      Conferir e publicar</button>
+  </div>
+
+  <div style="overflow-x:auto">
+  <table>
+    <tr>
+      <th style="width:30px"></th>
+      <th style="width:52px"></th>
+      <th>Peça</th>
+      <th style="width:150px">Situação</th>
+      <th style="width:190px">Foto</th>
+      <th class="num" style="width:110px">Preço</th>
+      <th class="num" style="width:120px">Valor parado</th>
+      <th style="width:70px"></th>
+    </tr>
+    {% for it in linhas %}
+    {% set meta = situacoes.get(it.situacao, {'curto': it.situacao, 'cor': 'neutro'}) %}
+    <tr>
+      <td>
+        {% if it.situacao == 'pronta' %}
+        <input type="checkbox" name="ids" value="{{ it.id }}" class="sel"
+               onchange="conta()">
+        {% endif %}
+      </td>
+      <td>
+        {% if it.capa %}
+          <img src="{{ it.capa }}" alt="" loading="lazy"
+               style="width:44px;height:44px;object-fit:contain;background:#fff;
+                      border-radius:5px;border:1px solid var(--linha)">
+        {% else %}
+          <div style="width:44px;height:44px;border-radius:5px;
+                      background:#11141a;border:1px solid var(--linha)"></div>
+        {% endif %}
+      </td>
+      <td>
+        <a href="/itens/{{ it.id }}" style="font-weight:500;text-decoration:none"
+           >{{ (it.descricao_erp or it.titulo or '')[:64] }}</a>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ it.sku }}{% if it.marca %} · {{ it.marca }}{% endif %}</div>
+        {% if it.aplicacao %}
+        <div class="fraco" style="font-size:11px">{{ it.aplicacao[:70] }}</div>
+        {% endif %}
+      </td>
+      <td>
+        <span class="pill {{ meta.cor }}">{{ meta.curto }}</span>
+        {% if it.permalink %}
+        <div><a href="{{ it.permalink }}" target="_blank" rel="noopener"
+                style="font-size:11px">ver anúncio ↗</a></div>
+        {% endif %}
+      </td>
+      <td class="fraco" style="font-size:12px">
+        {{ it.origem_foto or (it.esteira_resultado or '—')[:60] }}
+        {% if it.quantas_fotos %}
+        <div style="font-size:11px">{{ it.quantas_fotos }} foto(s)</div>
+        {% endif %}
+      </td>
+      <td class="num">R$ {{ '%.2f'|format(it.preco or 0) }}</td>
+      <td class="num">R$ {{ '%.2f'|format(it.valor or 0) }}</td>
+      <td><a href="/itens/{{ it.id }}" style="font-size:12px">abrir</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</div>
+</form>
+
+<div class="card" style="display:flex;gap:14px;align-items:center;
+     justify-content:space-between;flex-wrap:wrap">
+  <div class="fraco" style="font-size:13px">
+    Mostrando {{ linhas|length }} de {{ total }} peça(s) ·
+    página {{ pagina }} de {{ paginas }}
+  </div>
+  <div style="display:flex;gap:8px">
+    {% if pagina > 1 %}
+    <a class="botao secundario" style="padding:8px 14px;font-size:13px"
+       href="/lotes/{{ lote_id }}/lista{{ qs(pagina=pagina-1) }}">← anterior</a>
+    {% endif %}
+    {% if pagina < paginas %}
+    <a class="botao secundario" style="padding:8px 14px;font-size:13px"
+       href="/lotes/{{ lote_id }}/lista{{ qs(pagina=pagina+1) }}">próxima →</a>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function marcar(v){
+  document.querySelectorAll('.sel').forEach(c => c.checked = v);
+  conta();
+}
+function conta(){
+  const n = document.querySelectorAll('.sel:checked').length;
+  document.getElementById('contador').textContent =
+    n ? n + ' peça(s) marcada(s)' : '';
+  document.getElementById('botaoPublicar').disabled = !n;
+}
+conta();
+</script>
+{% endif %}
+
+<style>
+  .filtro{
+    font-size:13px;background:#11141a;border:1px solid var(--linha);
+    border-radius:20px;padding:6px 14px;text-decoration:none;color:var(--txt);
+  }
+  .filtro.ativo{border-color:var(--azul);background:rgba(47,109,246,.12)}
+  .filtro.f-ok strong{color:#5fd39b}
+  .filtro.f-alerta strong{color:#e3b45c}
+</style>
+
+{% endblock %}

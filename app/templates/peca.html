@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block titulo %}{{ item.sku }} — {{ (item.descricao_erp or '')[:40] }}{% endblock %}
+{% block conteudo %}
+
+{% set meta = situacoes.get(item.situacao, {'curto': item.situacao, 'cor': 'neutro'}) %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <span class="pill {{ meta.cor }}">{{ meta.curto }}</span>
+    <h2 style="margin:8px 0 2px;font-size:22px">{{ item.descricao_erp }}</h2>
+    <div style="font-family:ui-monospace,monospace;color:#7aa5ff;font-size:16px">
+      {{ item.sku }}</div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/lotes/{{ lote_id }}/lista">← Voltar para a lista</a>
+</div>
+
+{% if aviso %}
+<div class="aviso">{{ aviso }}</div>
+{% endif %}
+
+<div class="card">
+  <table style="font-size:14px;max-width:640px">
+    <tr><th style="width:130px">Marca</th><td>{{ item.marca or '—' }}</td></tr>
+    <tr><th>Aplicação</th><td>{{ item.aplicacao or '—' }}</td></tr>
+    <tr><th>Preço</th><td>R$ {{ '%.2f'|format(item.preco or 0) }} cada</td></tr>
+    <tr><th>Estoque</th><td>{{ item.quantidade or 1 }} unidade(s)</td></tr>
+    <tr><th>Valor parado</th><td>R$ {{ '%.2f'|format(item.valor or 0) }}</td></tr>
+    <tr><th>Linha da planilha</th><td>{{ item.linha }}</td></tr>
+  </table>
+</div>
+
+{# ---------- já publicada: o comprovante ---------- #}
+{% if item.situacao == 'no_ar' %}
+<div class="card" style="border-color:rgba(46,163,107,.5);
+     background:rgba(46,163,107,.06)">
+  <h2>✓ Anúncio no ar</h2>
+  <table style="font-size:14px;max-width:640px">
+    <tr><th style="width:130px">Código do anúncio</th>
+        <td style="font-family:ui-monospace,monospace">{{ item.ml_item_id }}</td></tr>
+    <tr><th>Publicado em</th>
+        <td>{{ (item.decidido_em or '')[:16]|replace('T', ' ') }}</td></tr>
+    {% if item.fonte_dados %}
+    <tr><th>Origem das fotos</th><td>{{ item.fonte_dados }}</td></tr>
+    {% endif %}
+  </table>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+    {% if item.permalink %}
+    <a class="botao" href="{{ item.permalink }}" target="_blank" rel="noopener"
+       >Abrir no Mercado Livre ↗</a>
+    {% endif %}
+    <form method="post" action="/itens/{{ item.id }}/corrigir-fotos"
+          onsubmit="return confirm('Reenviar as fotos para este anúncio?')">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <button class="secundario" type="submit">Reenviar fotos</button>
+    </form>
+  </div>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Reenviar fotos só é necessário se o anúncio estiver sem imagem depois de
+    alguns minutos — o Mercado Livre processa as imagens em segundo plano.
+  </p>
+</div>
+{% endif %}
+
+{# ---------- o cartão: como o anúncio vai ficar ---------- #}
+{% if resumo and item.situacao != 'no_ar' %}
+<div class="card" style="{{ 'border-color:rgba(46,163,107,.5)' if resumo.publicavel }}">
+  <h2>Como o anúncio vai ficar</h2>
+
+  {% if resumo.imagens %}
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    {% for f in resumo.imagens[:6] %}
+    <img src="{{ f }}" alt="" loading="lazy"
+         style="width:96px;height:96px;object-fit:contain;background:#fff;
+                border-radius:8px;border:1px solid var(--linha)">
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="font-size:19px;font-weight:600;line-height:1.3;max-width:640px">
+    {{ resumo.titulo }}</div>
+  <div style="font-size:24px;font-weight:600;margin:10px 0 4px">
+    R$ {{ '%.2f'|format(resumo.preco) }}</div>
+  <div class="fraco" style="font-size:13px">
+    {{ resumo.quantidade }} unidade(s) disponíveis · novo
+    {% if resumo.origem_fotos %} · {{ resumo.origem_fotos }}{% endif %}
+  </div>
+
+  <table style="font-size:13px;max-width:640px;margin-top:16px">
+    <tr><th style="width:150px">Marca</th><td>{{ resumo.marca or '—' }}</td></tr>
+    <tr><th>Número de peça</th>
+        <td style="font-family:ui-monospace,monospace">{{ resumo.codigo }}</td></tr>
+    {% if resumo.aplicacao %}
+    <tr><th>Aplicação</th><td>{{ resumo.aplicacao }}</td></tr>
+    {% endif %}
+  </table>
+
+  <details style="margin-top:14px">
+    <summary class="fraco" style="font-size:13px;cursor:pointer">ver a descrição</summary>
+    <div style="background:#11141a;border:1px solid var(--linha);border-radius:8px;
+                padding:14px;font-size:13px;white-space:pre-wrap;margin-top:8px;
+                max-height:240px;overflow-y:auto">{{ resumo.descricao }}</div>
+  </details>
+
+  {% if resumo.publicavel %}
+  <div class="aviso" style="margin-top:16px">
+    Publicar cria um anúncio <strong>de verdade</strong> na conta da Águia Parts,
+    com {{ resumo.quantidade }} unidade(s) a R$ {{ '%.2f'|format(resumo.preco) }}.
+    {% if not resumo.por_catalogo %}
+    O título exibido é montado pelo Mercado Livre a partir do nome acima e dos
+    atributos — pode sair um pouco diferente.
+    {% endif %}
+  </div>
+  <form method="post" action="/itens/{{ item.id }}/publicar-loja"
+        onsubmit="return confirm('Publicar este anúncio de verdade no Mercado Livre?')">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <button type="submit" style="font-size:16px;padding:12px 22px">
+      Publicar no Mercado Livre</button>
+  </form>
+  {% else %}
+  <div class="aviso" style="margin-top:16px;margin-bottom:0">
+    <strong>Falta foto.</strong> O Mercado Livre não aceita anúncio sem imagem.
+    Use uma das opções abaixo.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---------- editar o texto ---------- #}
+{% if item.situacao != 'no_ar' %}
+<div class="card">
+  <h2>Ajustar o texto</h2>
+  <form method="post" action="/itens/{{ item.id }}/preparar">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <div style="margin-bottom:12px">
+      <label for="titulo">Nome do produto <span class="fraco">· até 60 caracteres</span></label>
+      <input id="titulo" name="titulo" maxlength="60"
+             value="{{ resumo.titulo if resumo else '' }}"
+             style="width:100%;font-size:15px;padding:10px">
+    </div>
+    <div style="margin-bottom:12px">
+      <label for="descricao">Descrição</label>
+      <textarea id="descricao" name="descricao" rows="6" maxlength="4000"
+                style="width:100%;font-size:14px;padding:10px;background:#11141a;
+                       border:1px solid var(--linha);color:var(--txt);
+                       border-radius:7px;font-family:inherit"
+                >{{ resumo.descricao if resumo else '' }}</textarea>
+    </div>
+    <button class="secundario" type="submit">Salvar texto</button>
+  </form>
+</div>
+
+{# ---------- fotos ---------- #}
+<div class="card">
+  <h2>Fotos</h2>
+
+  {% if fotos_proprias %}
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Estas são as fotos tiradas no estoque. Elas substituem as do site quando
+    o anúncio for publicado.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    {% for f in fotos_proprias %}
+    <div style="position:relative">
+      <img src="/fotos/{{ item.id }}/{{ f }}" alt=""
+           style="width:110px;height:110px;object-fit:cover;background:#fff;
+                  border-radius:8px;border:1px solid var(--linha)">
+      <form method="post" action="/itens/{{ item.id }}/fotos/{{ f }}/apagar"
+            style="position:absolute;top:4px;right:4px">
+        <input type="hidden" name="lote_id" value="{{ lote_id }}">
+        <input type="hidden" name="volta_para" value="peca">
+        <button type="submit" title="apagar"
+                style="background:rgba(0,0,0,.7);border:0;color:#fff;
+                       border-radius:50%;width:24px;height:24px;padding:0;
+                       cursor:pointer;line-height:1">×</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% elif fotos_site %}
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Fotos vindas de {{ item.fonte_dados or 'loja da Águia' }}. Se preferir a
+    foto real da peça, tire abaixo — ela substitui estas.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+    {% for f in fotos_site %}
+    <div style="position:relative">
+      <img src="{{ f }}" alt="" loading="lazy"
+           style="width:110px;height:110px;object-fit:contain;background:#fff;
+                  border-radius:8px;border:1px solid var(--linha)">
+      <form method="post" action="/itens/{{ item.id }}/loja-fotos/remover"
+            style="position:absolute;top:4px;right:4px"
+            onsubmit="return confirm('Tirar esta foto?')">
+        <input type="hidden" name="lote_id" value="{{ lote_id }}">
+        <input type="hidden" name="url" value="{{ f }}">
+        <button type="submit" title="tirar"
+                style="background:rgba(0,0,0,.7);border:0;color:#fff;
+                       border-radius:50%;width:24px;height:24px;padding:0;
+                       cursor:pointer;line-height:1">×</button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/itens/{{ item.id }}/fotos"
+        enctype="multipart/form-data"
+        style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <input type="hidden" name="volta_para" value="peca">
+    <input type="file" name="arquivos" accept="image/*" capture="environment"
+           multiple required style="font-size:14px">
+    <button class="secundario" type="submit" style="padding:10px 16px">
+      Enviar foto da peça</button>
+  </form>
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    No celular o botão abre a câmera. Até 10 fotos, 10 MB cada.
+  </p>
+</div>
+
+{# ---------- o que o sistema achou ---------- #}
+<div class="card">
+  <h2>O que o sistema encontrou</h2>
+  {% if item.esteira_resultado %}
+  <p style="margin-top:0">{{ item.esteira_resultado }}</p>
+  {% else %}
+  <p class="fraco" style="margin-top:0">Esta peça ainda não passou pela busca
+    automática.</p>
+  {% endif %}
+
+  {% if item.candidatos_lista %}
+  <table style="font-size:13px">
+    <tr><th>Página encontrada</th><th style="width:120px">Código</th><th style="width:80px"></th></tr>
+    {% for c in item.candidatos_lista %}
+    <tr>
+      <td><a href="{{ c.url }}" target="_blank" rel="noopener">{{ c.titulo[:70] }}</a>
+        <div class="fraco" style="font-size:11px">{{ c.dominio }}</div></td>
+      <td>{% if c.confere %}<span class="pill ok">bate</span>
+          {% else %}<span class="pill neutro">não bate</span>{% endif %}</td>
+      <td>
+        <form method="post" action="/itens/{{ item.id }}/pesquisar">
+          <input type="hidden" name="lote_id" value="{{ lote_id }}">
+          <input type="hidden" name="url" value="{{ c.url }}">
+          <button class="secundario" type="submit"
+                  style="font-size:12px;padding:5px 10px">usar</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--linha)">
+    <label for="url">Achou a peça em outro site? Cole o link</label>
+    <form method="post" action="/itens/{{ item.id }}/pesquisar"
+          style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input id="url" type="url" name="url" required
+             placeholder="https://site-do-fabricante.com.br/produto/..."
+             style="flex:1;min-width:300px;padding:10px">
+      <button class="secundario" type="submit" style="padding:10px 16px">
+        Ler a ficha</button>
+    </form>
+    <p class="fraco" style="font-size:12px;margin-bottom:0">
+      O sistema lê a ficha técnica de qualquer site. Foto e descrição só são
+      aproveitadas se o site estiver autorizado em
+      <a href="/fontes">fontes de imagem</a>.
+    </p>
+  </div>
+
+  <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--linha)">
+    <form method="post" action="/itens/{{ item.id }}/buscar-na-internet">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <button class="secundario" type="submit" style="padding:10px 16px">
+        Procurar esta peça na internet</button>
+    </form>
+  </div>
+</div>
+
+{# ---------- descartar ---------- #}
+<div class="card" style="padding:18px">
+  <form method="post" action="/itens/{{ item.id }}/decidir"
+        style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <span class="fraco" style="font-size:13px;flex:1;min-width:200px">
+      Não dá para anunciar esta peça agora?</span>
+    <button class="secundario" type="submit" name="decisao" value="nao_achei"
+            style="font-size:13px;padding:8px 14px">Não achei a peça</button>
+    <button class="secundario" type="submit" name="decisao" value="duvida"
+            style="font-size:13px;padding:8px 14px">Deixar em dúvida</button>
+  </form>
+</div>
+{% endif %}
+
+{% if item.situacao in ('descartada', 'fora') %}
+<div class="card" style="padding:18px">
+  <form method="post" action="/itens/{{ item.id }}/reabrir"
+        style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <span class="fraco" style="font-size:13px;flex:1;min-width:200px">
+      Esta peça está fora da fila. Quer trazer de volta?</span>
+    <button type="submit" style="padding:9px 16px">Trazer para a fila</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

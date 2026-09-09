@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block titulo %}Conferir e publicar{% endblock %}
+{% block conteudo %}
+
+{% if resultado %}
+{# ---------- depois: o comprovante ---------- #}
+<div class="card" style="border-color:{{ 'rgba(46,163,107,.5)' if resultado.ok
+     else 'rgba(208,69,63,.5)' }}">
+  <h2 style="font-size:20px">{{ resultado.mensagem }}</h2>
+  <div class="fraco" style="font-size:13px">
+    {{ resultado.publicados }} publicado(s) ·
+    {{ resultado.falharam }} com problema
+  </div>
+</div>
+
+<div class="card">
+  <table>
+    <tr><th>Peça</th><th style="width:60%">Resultado</th></tr>
+    {% for r in resultado.resultados %}
+    <tr>
+      <td>
+        <a href="/itens/{{ r.item_id }}" style="text-decoration:none">{{ r.titulo }}</a>
+        <div class="fraco" style="font-size:11px;font-family:ui-monospace,monospace">
+          {{ r.codigo }}</div>
+      </td>
+      <td>
+        {% if r.ok %}
+          <span class="pill ok">no ar</span>
+          {% if r.permalink %}
+          <a href="{{ r.permalink }}" target="_blank" rel="noopener"
+             style="margin-left:8px;font-size:13px">abrir no Mercado Livre ↗</a>
+          {% endif %}
+        {% else %}
+          <span class="pill erro">não publicou</span>
+          <div style="font-size:13px;margin-top:5px">{{ r.mensagem }}</div>
+          <a href="/itens/{{ r.item_id }}" style="font-size:12px">abrir a peça
+            para corrigir</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="card" style="display:flex;gap:12px;flex-wrap:wrap">
+  <a class="botao" href="/lotes/{{ lote_id }}/lista?situacao=pronta"
+     >Voltar para as prontas</a>
+  <a class="botao secundario" href="/lotes/{{ lote_id }}/lista?situacao=no_ar"
+     style="padding:9px 16px">Ver tudo que está no ar</a>
+</div>
+
+{% else %}
+{# ---------- antes: a conferência ---------- #}
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Conferir antes de publicar</h2>
+    <div class="fraco" style="font-size:13px">
+      {{ resumos|length }} peça(s) · R$ {{ '%.2f'|format(total) }} em estoque.
+      Nada foi publicado ainda.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/lotes/{{ lote_id }}/lista?situacao=pronta">← Voltar</a>
+</div>
+
+<div class="card">
+  {% for r in resumos %}
+  <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;
+              padding:16px 0;{{ 'border-top:1px solid var(--linha)' if not loop.first }}">
+    {% if r.imagens %}
+    <img src="{{ r.imagens[0] }}" alt="" loading="lazy"
+         style="width:88px;height:88px;object-fit:contain;background:#fff;
+                border-radius:8px;border:1px solid var(--linha)">
+    {% else %}
+    <div style="width:88px;height:88px;border-radius:8px;background:#11141a;
+                border:1px solid var(--linha)"></div>
+    {% endif %}
+    <div style="flex:1;min-width:260px">
+      <div style="font-size:16px;font-weight:600;line-height:1.35">{{ r.titulo }}</div>
+      <div style="font-size:18px;font-weight:600;margin:5px 0 3px">
+        R$ {{ '%.2f'|format(r.preco) }}</div>
+      <div class="fraco" style="font-size:12px">
+        {{ r.quantidade }} unidade(s) · código {{ r.codigo }}
+        {% if r.origem_fotos %} · {{ r.origem_fotos }}{% endif %}
+        {% if r.imagens %} · {{ r.imagens|length }} foto(s){% endif %}
+      </div>
+      {% if not r.publicavel %}
+      <div style="color:#e3b45c;font-size:12px;margin-top:4px">
+        sem foto — esta peça vai falhar</div>
+      {% endif %}
+    </div>
+    <a href="/itens/{{ r.item.id }}" style="font-size:13px">ajustar</a>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card" style="border-color:rgba(208,69,63,.35)">
+  <h2>Publicar de verdade</h2>
+  <p style="margin-top:0">
+    Isto cria <strong>{{ resumos|length }} anúncio(s) reais</strong> na conta da
+    Águia Parts, com o preço e o estoque da planilha. As fotos podem levar alguns
+    minutos para aparecer — o Mercado Livre processa a imagem depois de criar o
+    anúncio.
+  </p>
+  <form method="post" action="/lotes/{{ lote_id }}/publicar-agora"
+        onsubmit="return confirm('Publicar {{ resumos|length }} anúncio(s) de verdade no Mercado Livre?')">
+    {% for r in resumos %}
+    <input type="hidden" name="ids" value="{{ r.item.id }}">
+    {% endfor %}
+    <button type="submit" style="font-size:16px;padding:13px 24px">
+      Publicar {{ resumos|length }} anúncio(s)</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

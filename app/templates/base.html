@@ -53,9 +53,13 @@
 </head>
 <body>
 <header>
-  <h1>Águiahub <span>· publicação no Mercado Livre</span>
+  <h1><a href="/" style="color:var(--txt);text-decoration:none">Águiahub</a>
+      <span>· Águia Diesel</span>
       <span style="font-size:11px;color:var(--fraco);border:1px solid var(--linha);border-radius:20px;padding:2px 8px;margin-left:6px">v{{ VERSAO }}</span></h1>
-  <a href="/" class="fraco" style="font-size:13px">Início</a>
+  <nav style="display:flex;gap:18px;align-items:center;font-size:13px">
+    {% if lote_id %}<a href="/lotes/{{ lote_id }}/lista">Peças</a>{% endif %}
+    <a href="/config" class="fraco">Configuração</a>
+  </nav>
 </header>
 <main>
 {% if not conta_conectada() %}

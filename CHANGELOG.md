@@ -5,6 +5,80 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.27.0 — 09/09/2026
+
+**Três telas: a lista, a peça, o cartão.**
+
+Esta versão é o redesenho combinado com o João, que está entregando o sistema
+para a Águia Diesel. O pedido dele foi direto: *"quero um controle maior do
+processo... ver cada item da planilha e decidir qual a melhor forma de incluir
+o anúncio"*, e *"a publicação o mais intuitiva possível"*.
+
+Isso é uma crítica correta a uma escolha minha. **A fila mostrava uma peça por
+vez e escolhia a próxima pelo critério dela** (maior valor parado). Para quem
+conhece o estoque, isso tira o controle: não dá para ver o conjunto, não dá
+para escolher, não dá para pular. E, para quem vai operar na Águia, o sistema
+tinha oito telas — ferramenta de desenvolvedor, não de estoquista.
+
+### A lista (`/lotes/{id}/lista`)
+
+Todas as peças da planilha, uma por linha, com foto, situação, origem do dado
+e valor parado. Filtro por situação, por faixa de preço e busca por código,
+descrição ou aplicação. **Seleção múltipla para publicar em bloco.**
+
+A situação de cada peça é calculada em **um lugar só** (`app/painel.py`), em
+SQL, para a tela filtrar e contar 1.687 linhas sem carregar tudo na memória:
+
+    pronta           tem foto e dados — publica em bloco, sem abrir
+    precisa de você  o sistema achou algo, mas não teve certeza
+    sem foto         nenhuma origem conhecida tem essa peça
+    no ar            publicada, com código, link e data guardados
+    descartada       alguém decidiu não anunciar — dá para reabrir
+    fora da fila     a triagem barrou antes (sem código utilizável)
+
+É essa classificação que faz "rápido" e "seguro" conviverem: o óbvio sai em
+bloco, o duvidoso exige um par de olhos. Sem ela, a segurança passaria a
+depender da disciplina de quem está com pressa.
+
+### A peça (`/itens/{id}`)
+
+Tudo sobre uma peça num lugar só: o que o sistema encontrou e de onde, os
+links candidatos que ele guardou, colar um link novo, subir foto da câmera,
+editar título e descrição — e o cartão do anúncio embaixo. Antes isso estava
+espalhado em três telas e era preciso saber qual botão levava onde.
+
+### O cartão
+
+A peça **como ela vai aparecer no anúncio**: foto, título, preço, quantidade,
+ficha e descrição, com uma frase dizendo exatamente o que o botão faz. Sem
+JSON, sem "payload", sem termo técnico. Vale para uma peça e para um bloco de
+cinquenta — a tela de conferência mostra todos os cartões antes de qualquer
+coisa subir, e depois vira o comprovante, com o link de cada anúncio no ar.
+
+Há teste garantindo que o cartão e a publicação usam **as mesmas funções** de
+título e descrição: um cartão que mostra uma coisa e publica outra seria pior
+do que não ter cartão nenhum.
+
+### Configuração (`/config`)
+
+Fontes autorizadas, sites de busca, esteira, medição, conexão com o ML e
+diagnóstico saíram do caminho e viraram uma tela só, ajustada na entrega. Quem
+só quer anunciar as peças do dia nunca precisa abrir.
+
+### Um bug antigo que esta versão corrigiu
+
+O status `foto_do_operador` existia no código desde a v0.9 e **nenhuma rota o
+gravava**: a peça ganhava foto tirada no estoque e continuava contada como
+"sem foto", invisível na lista de prontas. Agora enviar foto marca a peça, e
+apagar a última devolve — senão ela ficaria listada como pronta e falharia na
+publicação.
+
+Dezenove testes novos, 244 no total. O fluxo inteiro — lista, peça,
+conferência, publicação, comprovante — foi verificado ponta a ponta com o app
+rodando de verdade, não só no pytest.
+
+---
+
 ## v0.26.0 — 08/09/2026
 
 **Medir de onde viria a foto — a pendência mais antiga do projeto.**

@@ -110,7 +110,7 @@
         <th>Data</th><th></th></tr>
     {% for l in lotes %}
     <tr>
-      <td><a href="{% if l['status'] == 'fila' %}/fila/{{ l['id'] }}{% else %}/lotes/{{ l['id'] }}/conferencia{% endif %}">{{ l['id'] }}</a></td>
+      <td><a href="{% if l['status'] in ('fila','pronto_com_fotos') %}/lotes/{{ l['id'] }}/lista{% else %}/lotes/{{ l['id'] }}/conferencia{% endif %}">{{ l['id'] }}</a></td>
       <td>{{ l['arquivo'] }}</td>
       <td class="num">{{ l['total_linhas'] }}</td>
       <td>{% if l['status'] in ('fila','pronto_com_fotos') %}
@@ -119,8 +119,8 @@
       <td>{{ l['status'] }}</td>
       <td class="fraco">{{ l['criado_em'][:16].replace('T',' ') }}</td>
       <td>{% if l['status'] in ('fila','pronto_com_fotos') %}
-          <a href="/lotes/{{ l['id'] }}/esteira" style="font-size:12px"
-             >esteira</a>{% endif %}</td>
+          <a href="/lotes/{{ l['id'] }}/lista" style="font-size:12px"
+             >abrir peças</a>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>

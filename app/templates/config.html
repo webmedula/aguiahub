@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block titulo %}Configuração{% endblock %}
+{% block conteudo %}
+
+<div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+  <div style="flex:1;min-width:240px">
+    <h2 style="margin:0;font-size:18px">Configuração</h2>
+    <div class="fraco" style="font-size:13px">
+      Ajustado uma vez e esquecido. Quem só quer anunciar peça não precisa
+      abrir esta tela.
+    </div>
+  </div>
+  <a class="botao" style="background:transparent;border:1px solid var(--linha)"
+     href="/">Início</a>
+</div>
+
+<div class="card">
+  <h2>Conta do Mercado Livre</h2>
+  {% if conta %}
+  <p style="margin-top:0">Conectada como
+    <strong>{{ conta[1] or conta[0].user_id }}</strong>. É nesta conta que os
+    anúncios são criados.</p>
+  <form method="post" action="/oauth/mercadolivre/desconectar"
+        onsubmit="return confirm('Desconectar a conta do Mercado Livre?')">
+    <button class="secundario" type="submit">Desconectar</button>
+  </form>
+  {% else %}
+  <p style="margin-top:0">Nenhuma conta conectada — sem ela não dá para
+    consultar nem publicar.</p>
+  <a class="botao" href="/oauth/mercadolivre/login">Conectar agora</a>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Marcas autorizadas a ceder foto
+    <span class="fraco" style="font-weight:400">·
+      {{ (fontes|length) + (do_ambiente|length) }}</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    <strong>É esta lista que decide quantas peças saem prontas sozinhas.</strong>
+    Só de sites aqui o sistema aproveita foto e descrição. De qualquer outro
+    site ele traz apenas o dado técnico — aplicação, marca, código —, que é a
+    realidade da peça e não tem dono.
+  </p>
+  {% if fontes or do_ambiente %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    {% for f in fontes %}
+    <span class="pill ok" style="font-size:12px;padding:5px 12px">{{ f['dominio'] }}</span>
+    {% endfor %}
+    {% for d in do_ambiente %}
+    <span class="pill neutro" style="font-size:12px;padding:5px 12px">{{ d }}</span>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="aviso">Nenhuma marca cadastrada. Enquanto estiver assim, o
+    sistema não aproveita foto de site nenhum — só da loja da Águia e da
+    câmera do estoque.</div>
+  {% endif %}
+  <a class="botao secundario" href="/fontes" style="padding:9px 16px">
+    Gerenciar marcas</a>
+</div>
+
+<div class="card">
+  <h2>Sites onde procurar
+    <span class="fraco" style="font-weight:400">· {{ sites|length }}</span></h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Onde o sistema procura o código da peça. É diferente da lista acima:
+    cadastrar um concorrente aqui é útil para conferir ficha técnica e
+    <strong>não</strong> autoriza usar foto dele.
+  </p>
+  {% if sites %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    {% for s in sites %}
+    <span class="pill {{ 'neutro' if s['ativo'] else 'erro' }}"
+          style="font-size:12px;padding:5px 12px">{{ s['nome'] or s['padrao'] }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <a class="botao secundario" href="/sites" style="padding:9px 16px">
+    Gerenciar sites</a>
+</div>
+
+<div class="card">
+  <h2>Ferramentas em massa</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Rodam sozinhas no servidor, sobre o lote inteiro. Nenhuma delas publica
+    anúncio.
+  </p>
+  {% if lotes %}
+  <table>
+    <tr><th>Lista</th><th>Arquivo</th><th style="width:320px">Ferramentas</th></tr>
+    {% for l in lotes %}
+    {% if l['status'] in ('fila', 'pronto_com_fotos') %}
+    <tr>
+      <td><a href="/lotes/{{ l['id'] }}/lista">#{{ l['id'] }}</a></td>
+      <td class="fraco">{{ l['arquivo'] }} · {{ l['total_linhas'] }} linhas</td>
+      <td style="display:flex;gap:10px;flex-wrap:wrap">
+        <a href="/lotes/{{ l['id'] }}/cobertura" style="font-size:13px"
+           >medir de onde viria a foto</a>
+        <a href="/lotes/{{ l['id'] }}/esteira" style="font-size:13px"
+           >buscar dados sozinho</a>
+        <a href="/lotes/{{ l['id'] }}/exportar.csv" style="font-size:13px"
+           >exportar CSV</a>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="fraco">Nenhuma lista carregada ainda.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Diagnóstico</h2>
+  {% set persist = persistencia() %}
+  <table style="font-size:13px">
+    <tr><th style="width:220px">Versão no ar</th><td>v{{ VERSAO }}</td></tr>
+    <tr><th>Banco de dados</th>
+        <td style="font-family:ui-monospace,monospace">{{ persist.caminho }}</td></tr>
+    <tr><th>Volume montado</th>
+        <td>{% if persist.volume_montado %}<span class="pill ok">sim</span>
+            {% else %}<span class="pill erro">não — o deploy apaga o trabalho</span>
+            {% endif %}</td></tr>
+    <tr><th>Decisões gravadas</th><td>{{ persist.decisoes_gravadas }}</td></tr>
+  </table>
+  <div style="margin-top:12px">
+    <a href="/diagnostico/loja" style="font-size:13px">Testar conexão com a loja
+      da Águia</a>
+  </div>
+  {% if problemas_config %}
+  <div class="aviso" style="margin-top:14px;margin-bottom:0">
+    {% for p in problemas_config %}<div>{{ p }}</div>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}

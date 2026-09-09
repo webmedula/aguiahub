@@ -25,6 +25,7 @@ from app.ml.catalog import (CaminhoDoMLFechado, buscar_no_catalogo,
 from app import busca as mod_busca
 from app import cobertura as mod_cobertura
 from app import esteira as mod_esteira
+from app import painel as mod_painel
 from app import loja
 from app.extrator import fontes_permitidas
 from app import fotos as mod_fotos
@@ -382,7 +383,8 @@ async def triagem(request: Request, arquivo_salvo: str = Form(...),
         )
 
     storage.atualizar_status_lote(lote_id, "fila")
-    return RedirectResponse(f"/fila/{lote_id}", status_code=303)
+    # Cai direto na lista: é dali que a pessoa enxerga o conjunto e escolhe.
+    return RedirectResponse(f"/lotes/{lote_id}/lista", status_code=303)
 
 
 @app.get("/fila/{lote_id}", response_class=HTMLResponse)
@@ -437,6 +439,110 @@ async def prontas(request: Request, lote_id: int):
         "request": request, "lote_id": lote_id, "itens": itens,
         "valor_total": sum(float(i["valor"] or 0) for i in itens),
         "resultado": None,
+    })
+
+
+# ---------------------------------------------------------------------------
+# As três telas: a lista, a peça, o cartão de publicação
+# ---------------------------------------------------------------------------
+
+@app.get("/lotes/{lote_id}/lista", response_class=HTMLResponse)
+async def lista(request: Request, lote_id: int, situacao: str = "",
+                busca: str = "", faixa: str = "", pagina: int = 1):
+    """A lista: todas as peças da planilha, com filtro e ação em bloco.
+
+    Substitui a fila que mostrava uma peça por vez e escolhia a próxima pelo
+    critério dela. Aqui quem escolhe é quem está olhando.
+    """
+    lote = storage.lote(lote_id)
+    if not lote:
+        raise HTTPException(404, "Lote não encontrado.")
+
+    return templates.TemplateResponse(request, "lista.html", {
+        "request": request, "lote": lote, "lote_id": lote_id,
+        "contagem": mod_painel.contagem(lote_id),
+        "situacoes": mod_painel.SITUACOES,
+        "faixas": mod_painel.FAIXAS,
+        "filtro": {"situacao": situacao, "busca": busca, "faixa": faixa},
+        **mod_painel.listar(lote_id, situacao, busca, faixa, pagina),
+    })
+
+
+@app.get("/itens/{item_id}", response_class=HTMLResponse)
+async def peca(request: Request, item_id: int, aviso: str = ""):
+    """A peça: tudo o que dá para fazer com ela, num lugar só.
+
+    Antes isto estava espalhado em três telas (fila, pesquisa, preparar) e a
+    pessoa precisava saber qual botão levava onde.
+    """
+    linha = storage.item(item_id)
+    if linha is None:
+        raise HTTPException(404, "Peça não encontrada.")
+
+    resumo = mod_painel.resumo_do_anuncio(item_id)
+    return templates.TemplateResponse(request, "peca.html", {
+        "request": request,
+        "item": mod_painel.peca(item_id),
+        "lote_id": linha["lote_id"],
+        "resumo": resumo,
+        "fotos_proprias": mod_fotos.listar(item_id),
+        "fotos_site": json.loads(linha["loja_fotos"] or "[]"),
+        "situacoes": mod_painel.SITUACOES,
+        "aviso": aviso,
+    })
+
+
+@app.post("/lotes/{lote_id}/publicar-lote", response_class=HTMLResponse)
+async def conferir_publicacao(request: Request, lote_id: int,
+                              ids: list[int] = Form(default=[])):
+    """O cartão em bloco: mostra como cada anúncio vai ficar, antes de publicar.
+
+    Este passo existe porque publicar é irreversível do lado de fora: o
+    anúncio vai para a conta real da Águia Parts. Ver o que vai subir, com
+    foto e preço, é o que transforma um clique arriscado num clique conferido.
+    """
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    if not ids:
+        return RedirectResponse(f"/lotes/{lote_id}/lista?situacao=pronta",
+                                status_code=303)
+
+    resumos = [r for r in (mod_painel.resumo_do_anuncio(i) for i in ids) if r]
+    return templates.TemplateResponse(request, "publicar.html", {
+        "request": request, "lote_id": lote_id, "resumos": resumos,
+        "total": sum(r["preco"] * r["quantidade"] for r in resumos),
+        "resultado": None,
+    })
+
+
+@app.post("/lotes/{lote_id}/publicar-agora", response_class=HTMLResponse)
+async def publicar_agora(request: Request, lote_id: int,
+                         ids: list[int] = Form(default=[])):
+    """Publica de verdade. Cria anúncios REAIS na conta da Águia Parts."""
+    if not storage.lote(lote_id):
+        raise HTTPException(404, "Lote não encontrado.")
+    if not storage.carregar_token():
+        raise HTTPException(400, "Conecte a conta do Mercado Livre primeiro.")
+
+    resultado = await publicar_selecionados(ids)
+    return templates.TemplateResponse(request, "publicar.html", {
+        "request": request, "lote_id": lote_id, "resumos": [],
+        "total": 0, "resultado": resultado,
+    })
+
+
+@app.get("/config", response_class=HTMLResponse)
+async def configuracao(request: Request):
+    """Tudo que se ajusta uma vez e sai da frente de quem só quer anunciar."""
+    return templates.TemplateResponse(request, "config.html", {
+        "request": request,
+        "lotes": storage.listar_lotes(),
+        "fontes": storage.listar_fontes(),
+        "sites": storage.listar_sites_busca(),
+        "do_ambiente": [d.strip() for d in
+                        (s.fontes_imagem_autorizadas or "").split(",") if d.strip()],
+        "conta": storage.carregar_token(),
+        "problemas_config": s.validate(),
     })
 
 
@@ -879,6 +985,8 @@ async def publicar_item_da_loja(item_id: int, lote_id: int = Form(...),
 
 
 def _destino_fotos(item_id: int, lote_id: int, volta_para: str) -> str:
+    if volta_para == "peca":
+        return f"/itens/{item_id}"
     if volta_para == "preparar":
         return f"/itens/{item_id}/preparar?lote_id={lote_id}"
     return f"/fila/{lote_id}"
@@ -904,6 +1012,15 @@ async def enviar_fotos(item_id: int, lote_id: int = Form(...),
 
     if not enviadas and problemas:
         raise HTTPException(400, " ".join(problemas))
+
+    # Foto tirada no estoque é o que faltava para a peça poder virar anúncio:
+    # marca o status para ela aparecer como PRONTA na lista. Até a v0.26 o
+    # status 'foto_do_operador' existia no código e nenhuma rota o gravava —
+    # a peça ganhava foto e continuava contada como "sem foto".
+    linha = storage.item(item_id)
+    if linha is not None and linha["status"] == "na_fila":
+        storage.atualizar_dados_catalogo(item_id, status="foto_do_operador")
+
     return RedirectResponse(_destino_fotos(item_id, lote_id, volta_para),
                             status_code=303)
 
@@ -915,6 +1032,15 @@ async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...),
         mod_fotos.apagar(item_id, nome)
     except mod_fotos.FotoInvalida as exc:
         raise HTTPException(400, str(exc))
+
+    # Apagou a última foto e não há foto de site: a peça deixa de estar pronta.
+    # Sem isto ela continuaria na lista como "pronta" e falharia na publicação.
+    linha = storage.item(item_id)
+    if (linha is not None and linha["status"] == "foto_do_operador"
+            and not mod_fotos.listar(item_id)
+            and not json.loads(linha["loja_fotos"] or "[]")):
+        storage.atualizar_dados_catalogo(item_id, status="na_fila")
+
     return RedirectResponse(_destino_fotos(item_id, lote_id, volta_para),
                             status_code=303)
 
