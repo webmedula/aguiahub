@@ -5,6 +5,56 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.29.0 — 10/09/2026
+
+**Procurar pelo nome da peça, não só pelo código.**
+
+Pedido do João: *"quando eu clico em procurar esta peça na internet está
+procurando só pelo código. queria a opção de buscar pelo título também"*.
+
+Ele está certo, e o motivo aparece numa peça real da própria lista. O
+**MODULO PLD EURO V NOVO** tem, na coluna de código do ERP,
+`5454565051545011505058` — **22 dígitos**. Isso não é part number de peça
+nenhuma; parece vários códigos grudados ou uma célula exportada errada.
+Procurar por esse código é garantia matemática de não achar nada, em site
+nenhum, para sempre. O nome da peça é a única pista que sobra.
+
+### Como ficou
+
+Na tela da peça, três caminhos lado a lado:
+
+- **Pelo código** — o mais preciso, e continua sendo o padrão;
+- **Pelo nome da peça** — um clique, com o nome já montado: as abreviações do
+  ERP expandidas (`BBA ARLA` vira `Bomba Arla 32`) e a marca junto, quando ela
+  não é genérica;
+- **campo livre** — para escrever o que quiser procurar.
+
+Quando a busca por código não acha nada, o aviso agora **diz o que tentar em
+seguida** em vez de só informar o fracasso.
+
+### O casamento muda junto com o termo
+
+Procurar por nome não é procurar por código com outras palavras:
+
+- **por código**, o sistema gera as variantes de pontuação (`0281036486` =
+  `0.281.036.486`) e exige o código exato;
+- **por nome**, casa por palavra — e exige **metade das palavras** do termo,
+  contando só as de 4 letras ou mais. Sem esse piso, qualquer página do site
+  com "MERCEDES" no título entraria na lista.
+
+**A marca "o código aparece nesta página" continua dizendo a verdade.** Num
+resultado de busca por nome ela nasce falsa, porque nenhum código foi
+conferido — e a tela avisa, em cima, que ali o casamento é por palavra e a
+conferência é da pessoa. Seria fácil (e errado) deixar a marca verde só
+porque o resultado veio de uma busca bem-sucedida.
+
+Oito testes novos, 263 no total. Verificado com o app rodando: a busca por
+código consulta `?s=5454565051545011505058`, a por nome consulta
+`?s=MODULO+PLD+EURO+V+NOVO`, acha o módulo PLD e descarta a bomba d'água que
+só compartilhava a palavra "MERCEDES".
+
+---
+
 ## v0.28.0 — 10/09/2026
 
 **A foto estava na página o tempo todo — o sistema é que não olhava.**

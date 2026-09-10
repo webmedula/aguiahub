@@ -5,13 +5,32 @@
 <div class="card" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
   <div style="flex:1;min-width:240px">
     <h2 style="margin:0;font-size:18px">
-      Procurei <code>{{ item['sku'] }}</code> na internet</h2>
+      Procurei <code>{{ termo }}</code> na internet</h2>
     <div class="fraco" style="font-size:13px">
       {{ item['descricao_erp'] }}{% if item['marca'] %} · {{ item['marca'] }}{% endif %}
+      {% if por_nome %}
+        <br>Busca <strong>pelo nome</strong> — o casamento aqui é por palavra,
+        não por código. Confira a peça antes de aproveitar.
+      {% endif %}
     </div>
   </div>
   <a class="botao" style="background:transparent;border:1px solid var(--linha)"
-     href="/fila/{{ lote_id }}">Voltar para a fila</a>
+     href="/itens/{{ item['id'] }}">Voltar para a peça</a>
+</div>
+
+<div class="card" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+  <div style="flex:1;min-width:260px">
+    <label for="outro">Procurar outra coisa</label>
+    <form method="post" action="/itens/{{ item['id'] }}/buscar-na-internet"
+          style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input id="outro" type="text" name="termo"
+             value="{{ sugestao_nome if not por_nome else item['sku'] }}"
+             style="flex:1;min-width:240px;padding:10px">
+      <button class="secundario" type="submit" style="padding:10px 16px">
+        Procurar</button>
+    </form>
+  </div>
 </div>
 
 {% if resultado.candidatos %}

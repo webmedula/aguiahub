@@ -488,6 +488,7 @@ async def peca(request: Request, item_id: int, aviso: str = ""):
         "fotos_proprias": mod_fotos.listar(item_id),
         "fotos_site": json.loads(linha["loja_fotos"] or "[]"),
         "origens_de_foto": storage.origens_de_foto(item_id),
+        "busca_pelo_nome": _termo_pelo_nome(linha),
         "situacoes": mod_painel.SITUACOES,
         "aviso": aviso,
     })
@@ -691,12 +692,15 @@ async def alternar_site(site_id: int = Form(...)):
 
 @app.post("/itens/{item_id}/buscar-na-internet", response_class=HTMLResponse)
 async def buscar_na_internet(request: Request, item_id: int,
-                             lote_id: int = Form(...)):
+                             lote_id: int = Form(...),
+                             termo: str = Form("")):
     """Procura a peça sozinho e mostra as páginas candidatas.
 
-    Existe porque o extrator (colar o link) só ajudava quem já tinha achado
-    o link. Aqui o sistema faz a parte chata: consulta a busca interna dos
-    sites conhecidos pelo código do ERP e devolve o que parece ser a peça.
+    Por padrão procura pelo código, que é a pista mais precisa. Mas nem todo
+    código do ERP presta: o módulo PLD da lista tem um "código" de 22 dígitos,
+    que não existe em site nenhum. Por isso dá para procurar por um termo
+    livre — o nome da peça, normalmente —, e aí o casamento passa a ser por
+    palavra em vez de por código exato.
 
     Nada é aproveitado automaticamente. Cada candidato leva para a mesma tela
     de ficha de sempre, onde a pessoa compara e decide.
@@ -707,12 +711,34 @@ async def buscar_na_internet(request: Request, item_id: int,
 
     contexto = " ".join(t for t in (linha["descricao_erp"] or "",
                                     linha["marca"] or "") if t).strip()
-    resultado = await mod_busca.buscar(linha["sku"] or "", contexto)
+    resultado = await mod_busca.buscar(linha["sku"] or "", contexto,
+                                       termo=termo)
 
     return templates.TemplateResponse(request, "candidatos.html", {
         "request": request, "lote_id": lote_id, "item": linha,
         "resultado": resultado,
+        "termo": (termo or "").strip() or (linha["sku"] or ""),
+        "por_nome": bool((termo or "").strip()
+                         and not mod_busca.e_codigo(termo)),
+        "sugestao_nome": _termo_pelo_nome(linha),
     })
+
+
+def _termo_pelo_nome(linha) -> str:
+    """O nome da peça, do jeito que vale a pena procurar num site.
+
+    Expande as abreviações do ERP ("BBA ARLA" vira "Bomba Arla 32") e junta a
+    marca quando ela não é genérica — é o que dá alguma chance de casar com o
+    título que a loja usa.
+    """
+    from app.abreviacoes import expandir
+    from app.sheets import MARCAS_IGNORADAS
+
+    partes = [expandir(linha["descricao_erp"] or "")]
+    marca = (linha["marca"] or "").strip()
+    if marca and marca.upper() not in MARCAS_IGNORADAS:
+        partes.append(marca)
+    return " ".join(p for p in partes if p).strip()[:80]
 
 
 @app.get("/lotes/{lote_id}/decididas", response_class=HTMLResponse)

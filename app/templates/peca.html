@@ -309,11 +309,35 @@
   </div>
 
   <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--linha)">
-    <form method="post" action="/itens/{{ item.id }}/buscar-na-internet">
+    <label>Procurar esta peça na internet</label>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <form method="post" action="/itens/{{ item.id }}/buscar-na-internet">
+        <input type="hidden" name="lote_id" value="{{ lote_id }}">
+        <button class="secundario" type="submit" style="padding:10px 16px">
+          Pelo código {{ (item.sku or '')[:18] }}</button>
+      </form>
+      <form method="post" action="/itens/{{ item.id }}/buscar-na-internet">
+        <input type="hidden" name="lote_id" value="{{ lote_id }}">
+        <input type="hidden" name="termo" value="{{ busca_pelo_nome }}">
+        <button class="secundario" type="submit" style="padding:10px 16px">
+          Pelo nome da peça</button>
+      </form>
+    </div>
+
+    <form method="post" action="/itens/{{ item.id }}/buscar-na-internet"
+          style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
       <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input type="text" name="termo" value="{{ busca_pelo_nome }}"
+             placeholder="ou escreva o que procurar"
+             style="flex:1;min-width:280px;padding:10px">
       <button class="secundario" type="submit" style="padding:10px 16px">
-        Procurar esta peça na internet</button>
+        Procurar</button>
     </form>
+    <p class="fraco" style="font-size:12px;margin-bottom:0">
+      Pelo código é mais preciso. Pelo nome serve quando o código do ERP não
+      existe nos sites — aí o sistema casa por palavra, e conferir a peça
+      fica por sua conta.
+    </p>
   </div>
 </div>
 

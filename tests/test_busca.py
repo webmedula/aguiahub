@@ -281,7 +281,7 @@ def test_busca_da_peca_mostra_os_candidatos_sem_publicar_nada(banco,
         preco=3190.94, quantidade=15, descricao_erp="MODULO ELETRONICO",
         marca="BOSCH")
 
-    async def falsa(codigo, contexto=""):
+    async def falsa(codigo, contexto="", termo=""):
         assert codigo == "0281036486"
         return ResultadoBusca(candidatos=[
             Candidato(url="https://bosch.com.br/produto/modulo-0281036486/",
@@ -298,3 +298,107 @@ def test_busca_da_peca_mostra_os_candidatos_sem_publicar_nada(banco,
     # o item continua intocado: procurar não decide nem aproveita nada
     assert banco.item(item_id)["status"] == "na_fila"
     assert not banco.item(item_id)["loja_fotos"]
+
+
+# ---------------------------------------------------------------------------
+# Procurar pelo NOME, e não só pelo código (v0.29.0)
+# ---------------------------------------------------------------------------
+#
+# Pedido do João. O motivo aparece numa peça real da lista: o "MODULO PLD EURO
+# V NOVO" tem código `5454565051545011505058` — 22 dígitos, que não existem em
+# site nenhum. Procurar por código ali é garantia de não achar nada; o nome da
+# peça é a única pista que sobra.
+
+RESULTADO_PLD = """<html><body>
+<a href="/produto/modulo-de-injecao-pld-mercedes-mbb-sw23-euro-3-ap528">
+   MODULO DE INJECAO PLD MERCEDES MBB SW23 EURO 3 AP528</a>
+<a href="/produto/bomba-dagua-mercedes">BOMBA DAGUA MERCEDES ATEGO</a>
+<a href="/institucional/quem-somos">Quem somos</a>
+</body></html>"""
+
+
+def test_reconhece_codigo_e_nome():
+    from app.busca import e_codigo
+    assert e_codigo("0281036486") is True
+    assert e_codigo("A2C59517051") is True
+    assert e_codigo("MODULO PLD EURO V") is False
+    assert e_codigo("") is False
+
+
+def test_busca_por_nome_acha_pelo_texto_do_link():
+    from app.busca import links_candidatos
+    achados = links_candidatos(RESULTADO_PLD, "https://apolloonibus.com.br/busca",
+                               "MODULO DE INJECAO PLD MERCEDES")
+    urls = [c.url for c in achados]
+    assert any("modulo-de-injecao-pld" in u for u in urls)
+
+
+def test_busca_por_nome_descarta_o_que_so_tem_uma_palavra_em_comum():
+    """Exigir metade das palavras evita encher a tela com qualquer página do
+    site que tenha 'MERCEDES' no título."""
+    from app.busca import links_candidatos
+    achados = links_candidatos(RESULTADO_PLD, "https://apolloonibus.com.br/busca",
+                               "MODULO DE INJECAO PLD MERCEDES")
+    assert not any("bomba-dagua" in c.url for c in achados)
+
+
+def test_resultado_de_busca_por_nome_nao_mente_sobre_o_codigo():
+    """A marca "o código aparece nesta página" tem que continuar verdadeira:
+    quem procurou por nome não conferiu código nenhum."""
+    from app.busca import links_candidatos
+    achados = links_candidatos(RESULTADO_PLD, "https://apolloonibus.com.br/busca",
+                               "MODULO DE INJECAO PLD MERCEDES",
+                               codigo="5454565051545011505058")
+    assert achados
+    assert all(c.confere_codigo is False for c in achados)
+
+
+def test_peca_sem_codigo_utilizavel_ainda_pode_ser_procurada_por_nome():
+    import asyncio
+    from app.busca import buscar
+
+    r = asyncio.run(buscar("", termo=""))
+    assert r.candidatos == []
+    assert any("nenhum termo foi informado" in a for a in r.avisos)
+
+
+def test_aviso_de_nada_encontrado_sugere_procurar_pelo_nome(monkeypatch):
+    """Quando a busca por código não acha, a tela precisa dizer o que tentar
+    em seguida — senão a pessoa só vê 'não achei' e para ali."""
+    import asyncio
+    from app import busca
+
+    monkeypatch.setattr(busca, "sites_para_consultar",
+                        lambda: [{"id": 1, "nome": "x.com", "padrao": "x.com",
+                                  "cadastrado_como": "x.com", "origem": "t"}])
+
+    async def nada(padrao, termo, limite=12, codigo=""):
+        return [], ""
+
+    monkeypatch.setattr(busca, "buscar_no_site", nada)
+    r = asyncio.run(busca.buscar("0281036486"))
+    assert any("procurando pelo nome" in a for a in r.avisos)
+
+
+def test_a_tela_da_peca_oferece_os_dois_caminhos(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import app.config as cfg
+    import app.main as main
+    from app import storage
+
+    s = cfg.get_settings()
+    monkeypatch.setattr(s, "database_url", f"sqlite:///{tmp_path}/t.db")
+    monkeypatch.setattr(s, "data_dir", str(tmp_path))
+    storage.init_db()
+    lote_id = storage.criar_lote("x.xls", 1, True, {})
+    item_id = storage.registrar_item(
+        lote_id, 2, "5454565051545011505058", "MODULO PLD", {},
+        status="na_fila", preco=12483.60, quantidade=1, valor=12483.60,
+        descricao_erp="MODULO PLD EURO V NOVO", marca="OUTRAS MARCAS")
+
+    tela = TestClient(main.app, base_url="https://testserver").get(
+        f"/itens/{item_id}").text
+    assert "Pelo código" in tela
+    assert "Pelo nome da peça" in tela
+    # a marca genérica do ERP não entra no termo sugerido
+    assert "OUTRAS MARCAS" not in tela.split("Pelo nome da peça")[0][-500:]

@@ -94,6 +94,28 @@ MAX_SITES = 8
 MAX_CANDIDATOS = 12
 
 
+def e_codigo(termo: str) -> bool:
+    """O termo é um part number, ou é nome de peça?
+
+    Muda tudo no que vem depois: código se procura pelas variantes de
+    pontuação (`0281036486` = `0.281.036.486`) e casa exato; nome se procura
+    como está e casa por palavra. Tratar nome como código não acha nada, e
+    tratar código como nome traz lixo.
+    """
+    limpo = (termo or "").strip()
+    return bool(limpo) and " " not in limpo and any(c.isdigit() for c in limpo)
+
+
+def _palavras(termo: str) -> set:
+    """Palavras que valem para casar um nome de peça: as de 4 letras ou mais.
+
+    'DE', 'PLD', 'MB' aparecem em qualquer página do site e só atrapalham a
+    pontuação.
+    """
+    return {p for p in re.split(r"[^\wÀ-ÿ]+", (termo or "").upper())
+            if len(p) >= 4}
+
+
 @dataclass
 class Candidato:
     """Uma página que *pode* ser a peça. Quem confirma é a pessoa."""
@@ -186,20 +208,27 @@ def _descartar(caminho: str, url: str) -> bool:
     return "add-to-cart" in url or "add_to_cart" in url
 
 
-def links_candidatos(html: str, base: str, codigo: str,
-                     limite: int = MAX_CANDIDATOS) -> list[Candidato]:
+def links_candidatos(html: str, base: str, termo: str,
+                     limite: int = MAX_CANDIDATOS,
+                     codigo: str = "") -> list[Candidato]:
     """Extrai da página de resultados os links que parecem ser a peça.
 
     Pura de propósito (não faz rede): é a parte que mais tem chance de errar,
     então precisa ser testável com HTML de verdade colado no teste.
 
-    A pontuação prefere, nesta ordem: o código aparecer no link ou no texto,
-    o endereço ter cara de página de produto, e o texto do link ser um nome
-    de produto e não "leia mais".
+    ``termo`` é o que foi procurado — pode ser o código ou o nome da peça.
+    ``codigo`` é sempre o código do ERP, mesmo quando a busca foi por nome:
+    é ele que decide a marca "o código aparece nesta página", e essa marca
+    tem que continuar dizendo a verdade. Resultado de busca por nome nasce
+    sem ela, e é assim mesmo — quem confirma a peça é a pessoa.
     """
     host = dominio_de(base)
-    formas = {normalizar_codigo(f) for f in variantes_de_codigo(codigo)}
+    codigo = codigo or (termo if e_codigo(termo) else "")
+
+    formas = {normalizar_codigo(f) for f in variantes_de_codigo(codigo)} \
+        if codigo else set()
     formas.discard("")
+    palavras = set() if e_codigo(termo) else _palavras(termo)
 
     achados: dict[str, Candidato] = {}
     for href, texto_bruto in _RE_LINK.findall(html or ""):
@@ -235,6 +264,17 @@ def links_candidatos(html: str, base: str, codigo: str,
             pontos += 4
         if no_texto:
             pontos += 3
+
+        if palavras:
+            # Busca por nome: pontua por quantas palavras do termo aparecem.
+            # Exigir metade evita que qualquer página do site entre só porque
+            # tem uma palavra em comum.
+            alvo_texto = f"{texto.upper()} {url.upper()}"
+            achadas = sum(1 for p in palavras if p in alvo_texto)
+            if achadas < max(2, (len(palavras) + 1) // 2):
+                continue
+            pontos += achadas
+
         if any(p in caminho for p in _PISTAS_DE_PRODUTO):
             pontos += 2
         if len(texto) >= 12:
@@ -272,15 +312,20 @@ async def _baixar(cli: httpx.AsyncClient, url: str) -> str | None:
     return resp.text
 
 
-async def buscar_no_site(padrao: str, codigo: str,
-                         limite: int = MAX_CANDIDATOS) -> tuple[list[Candidato], str]:
-    """Procura o código na busca interna de um site.
+async def buscar_no_site(padrao: str, termo: str,
+                         limite: int = MAX_CANDIDATOS,
+                         codigo: str = "") -> tuple[list[Candidato], str]:
+    """Procura o termo na busca interna de um site.
 
     Devolve ``(candidatos, padrao_que_funcionou)``. O segundo valor é o que
     permite gravar o endereço descoberto: da próxima peça em diante aquele
     site custa uma requisição em vez de cinco.
     """
-    formas = variantes_de_codigo(codigo)[:3]     # inteiro, sem pontuação, agrupado
+    if e_codigo(termo):
+        # inteiro, sem pontuação, agrupado
+        formas = variantes_de_codigo(termo)[:3]
+    else:
+        formas = [termo.strip()] if (termo or "").strip() else []
     if not formas:
         return [], ""
 
@@ -295,7 +340,8 @@ async def buscar_no_site(padrao: str, codigo: str,
                 html = await _baixar(cli, url)
                 if not html:
                     continue
-                achados = links_candidatos(html, url, codigo, limite)
+                achados = links_candidatos(html, url, termo, limite,
+                                           codigo=codigo)
                 if achados:
                     return achados, tentativa
     return [], ""
@@ -303,7 +349,7 @@ async def buscar_no_site(padrao: str, codigo: str,
 
 # --- API de busca (pronta, ligada só com chave) ---------------------------
 
-async def buscar_por_api(codigo: str, contexto: str = "",
+async def buscar_por_api(termo: str, contexto: str = "",
                          limite: int = MAX_CANDIDATOS) -> list[Candidato]:
     """Busca ampla via API. Sem chave configurada, devolve lista vazia.
 
@@ -316,7 +362,7 @@ async def buscar_por_api(codigo: str, contexto: str = "",
     if not chave:
         return []
 
-    termo = " ".join(t for t in (codigo, contexto) if t).strip()
+    busca_completa = " ".join(t for t in (termo, contexto) if t).strip()
     provedor = (s.busca_api_provedor or "brave").strip().lower()
 
     try:
@@ -325,14 +371,14 @@ async def buscar_por_api(codigo: str, contexto: str = "",
                 resp = await cli.get(
                     "https://www.googleapis.com/customsearch/v1",
                     params={"key": chave, "cx": s.busca_google_cx,
-                            "q": termo, "num": min(limite, 10)})
+                            "q": busca_completa, "num": min(limite, 10)})
                 resp.raise_for_status()
                 itens = resp.json().get("items") or []
                 brutos = [(i.get("link", ""), i.get("title", "")) for i in itens]
             else:
                 resp = await cli.get(
                     "https://api.search.brave.com/res/v1/web/search",
-                    params={"q": termo, "count": min(limite, 20),
+                    params={"q": busca_completa, "count": min(limite, 20),
                             "country": "br", "search_lang": "pt"},
                     headers={"Accept": "application/json",
                              "X-Subscription-Token": chave})
@@ -344,7 +390,8 @@ async def buscar_por_api(codigo: str, contexto: str = "",
             f"A busca por API falhou ({type(exc).__name__}). A busca nos "
             "sites cadastrados continua funcionando.") from exc
 
-    formas = {normalizar_codigo(f) for f in variantes_de_codigo(codigo)}
+    formas = ({normalizar_codigo(f) for f in variantes_de_codigo(termo)}
+              if e_codigo(termo) else set())
     formas.discard("")
 
     saida: list[Candidato] = []
@@ -409,19 +456,26 @@ def sites_para_consultar() -> list[dict]:
     return saida[:MAX_SITES]
 
 
-async def buscar(codigo: str, contexto: str = "") -> ResultadoBusca:
+async def buscar(codigo: str, contexto: str = "",
+                 termo: str = "") -> ResultadoBusca:
     """Procura a peça em tudo que estiver disponível e devolve os candidatos.
 
-    ``contexto`` é a descrição/marca do ERP — só a API usa, para desempatar
-    ("0281036486 módulo injeção Bosch"). A busca interna dos sites usa apenas
-    o código: nome de peça no ERP é abreviado demais e só traz ruído.
+    ``termo`` é o que vai ser procurado de fato. Vazio, procura pelo código —
+    que é o caminho mais preciso quando o código presta. Preenchido, procura
+    por aquilo: serve para o caso em que o código do ERP é inutilizável (o
+    módulo PLD da lista tem um "código" de 22 dígitos, que não existe em site
+    nenhum) e o nome da peça é a única pista que sobra.
+
+    ``contexto`` é a descrição/marca do ERP — só a busca ampla por API usa,
+    para desempatar ("0281036486 módulo injeção Bosch").
     """
     codigo = (codigo or "").strip()
+    alvo = (termo or "").strip() or codigo
     resultado = ResultadoBusca()
-    if not codigo:
+    if not alvo:
         resultado.avisos.append(
-            "Esta peça não tem código utilizável no ERP — sem código não há o "
-            "que procurar. Use a foto da prateleira.")
+            "Esta peça não tem código utilizável no ERP — e nenhum termo foi "
+            "informado. Procure pelo nome da peça, ou use a foto da prateleira.")
         return resultado
 
     sites = sites_para_consultar()
@@ -433,9 +487,10 @@ async def buscar(codigo: str, contexto: str = "") -> ResultadoBusca:
             "Sites de busca — pode ser o site do fabricante da peça.")
         return resultado
 
-    tarefas = [buscar_no_site(s["padrao"], codigo) for s in sites]
+    tarefas = [buscar_no_site(s["padrao"], alvo, codigo=codigo) for s in sites]
     if resultado.api_ativa:
-        tarefas.append(buscar_por_api(codigo, contexto))
+        # na busca ampla, o contexto só ajuda quando o alvo é o código seco
+        tarefas.append(buscar_por_api(alvo, contexto if alvo == codigo else ""))
 
     respostas = await asyncio.gather(*tarefas, return_exceptions=True)
 
@@ -475,8 +530,12 @@ async def buscar(codigo: str, contexto: str = "") -> ResultadoBusca:
         unicos.values(), key=lambda c: (not c.confere_codigo, -c.pontos))[:MAX_CANDIDATOS]
 
     if not resultado.candidatos:
+        como = "o código" if alvo == codigo else "o termo"
         resultado.avisos.append(
-            f"Nenhum dos sites consultados devolveu página com o código "
-            f"{codigo}. Isso não quer dizer que a peça não exista — quer dizer "
-            "que ela não está nos sites que o sistema conhece.")
+            f"Nenhum dos sites consultados devolveu página com {como} "
+            f"\u201c{alvo}\u201d. Isso não quer dizer que a peça não exista — quer "
+            "dizer que ela não está, com esse termo, nos sites que o sistema "
+            "conhece."
+            + ("" if alvo != codigo else
+               " Vale tentar de novo procurando pelo nome da peça."))
     return resultado
