@@ -595,7 +595,8 @@ async def ver_esteira(request: Request, lote_id: int):
 
 @app.post("/lotes/{lote_id}/esteira")
 async def iniciar_esteira(lote_id: int, limite: int = Form(0),
-                          reprocessar: str = Form("")):
+                          reprocessar: str = Form(""),
+                          tentar_outros: str = Form("")):
     """Solta a esteira no lote. Ela roda em segundo plano por horas.
 
     Não publica nada: termina em "pronta para publicar" e quem manda para o
@@ -608,7 +609,8 @@ async def iniciar_esteira(lote_id: int, limite: int = Form(0),
         # alheios e embaralhariam a contagem da tela.
         return RedirectResponse(f"/lotes/{lote_id}/esteira", status_code=303)
 
-    mod_esteira.iniciar_em_segundo_plano(lote_id, limite, bool(reprocessar))
+    mod_esteira.iniciar_em_segundo_plano(lote_id, limite, bool(reprocessar),
+                                         bool(tentar_outros))
     return RedirectResponse(f"/lotes/{lote_id}/esteira", status_code=303)
 
 
@@ -693,7 +695,8 @@ async def alternar_site(site_id: int = Form(...)):
 @app.post("/itens/{item_id}/buscar-na-internet", response_class=HTMLResponse)
 async def buscar_na_internet(request: Request, item_id: int,
                              lote_id: int = Form(...),
-                             termo: str = Form("")):
+                             termo: str = Form(""),
+                             volta_para: str = Form("")):
     """Procura a peça sozinho e mostra as páginas candidatas.
 
     Por padrão procura pelo código, que é a pista mais precisa. Mas nem todo
@@ -721,6 +724,12 @@ async def buscar_na_internet(request: Request, item_id: int,
         "por_nome": bool((termo or "").strip()
                          and not mod_busca.e_codigo(termo)),
         "sugestao_nome": _termo_pelo_nome(linha),
+        # De onde a pessoa veio, para o "voltar" devolver ela ao mesmo lugar.
+        # Sem isso, quem procurava do pré-anúncio caía na tela da peça e
+        # perdia o texto que tinha acabado de revisar.
+        "voltar_para": (f"/itens/{item_id}/preparar?lote_id={lote_id}"
+                        if volta_para == "preparar"
+                        else f"/itens/{item_id}"),
     })
 
 
@@ -739,6 +748,50 @@ def _termo_pelo_nome(linha) -> str:
     if marca and marca.upper() not in MARCAS_IGNORADAS:
         partes.append(marca)
     return " ".join(p for p in partes if p).strip()[:80]
+
+
+def _termos_de_busca(linha) -> list[dict]:
+    """As formas de procurar esta peça, em ordem de chance de dar certo.
+
+    O que motivou: o SERVO EMBREAGEM SCANIA (`S2CP10055A`) voltava vazio da
+    busca, e a resposta estava na própria tela — o campo de aplicação dizia
+    "REMAN 013317707R / COM CABO S2CP10087A". Dois códigos de referência
+    cruzada, com muito mais chance de existir em catálogo do que o código do
+    item, e o sistema não oferecia nenhum dos dois.
+
+    Isto só *oferece* termos. Quem escolhe é a pessoa, e o aproveitamento de
+    dado continua exigindo código exato lá no publisher.
+    """
+    codigo = (linha["sku"] or "").strip()
+    nome = _termo_pelo_nome(linha)
+    opcoes: list[dict] = []
+
+    if nome and codigo:
+        opcoes.append({
+            "rotulo": "nome + código", "termo": f"{nome} {codigo}"[:120],
+            "ajuda": "Costuma ser o melhor na busca ampla: dá duas pistas de "
+                     "uma vez. Nos sites cadastrados só o código é enviado.",
+        })
+    if codigo:
+        opcoes.append({
+            "rotulo": "só o código", "termo": codigo,
+            "ajuda": "O caminho mais preciso quando o código do ERP existe "
+                     "no catálogo do fornecedor.",
+        })
+    if nome:
+        opcoes.append({
+            "rotulo": "só o nome", "termo": nome,
+            "ajuda": "Para quando o código do ERP é interno e não existe em "
+                     "site nenhum. Traz mais resultado e mais lixo junto.",
+        })
+
+    for outro in mod_busca.codigos_no_texto(linha["aplicacao"] or "", codigo):
+        opcoes.append({
+            "rotulo": outro, "termo": outro,
+            "ajuda": "Código que estava escrito no campo de aplicação — "
+                     "equivalente, substituto ou versão remanufaturada.",
+        })
+    return opcoes
 
 
 @app.get("/lotes/{lote_id}/decididas", response_class=HTMLResponse)
@@ -867,6 +920,9 @@ async def preparar(request: Request, item_id: int, lote_id: int):
         "fotos_site": fotos_site,
         "fotos_proprias": fotos_proprias,
         "pronto": bool(fotos_site or fotos_proprias),
+        "termos_busca": _termos_de_busca(linha),
+        # `s`, e não get_settings(), porque é o objeto que os testes trocam.
+        "api_ativa": bool((s.busca_api_key or "").strip()),
     })
 
 

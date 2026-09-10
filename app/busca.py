@@ -136,6 +136,72 @@ def e_codigo(termo: str) -> bool:
     return bool(limpo) and " " not in limpo and any(c.isdigit() for c in limpo)
 
 
+#: Um part number solto no meio de texto livre. Aceita começar por letra
+#: (`S2CP10087A` é código de verdade), mas exige massa de dígito — é o que
+#: separa código de palavra: "EMBREAGEM" e "SCANIA" não têm nenhum.
+_RE_CODIGO_SOLTO = re.compile(r"[A-Z0-9][A-Z0-9\-.]{4,}")
+
+#: Palavras que passam no teste de dígito mas não são peça nenhuma.
+_NAO_E_CODIGO = ("EURO", "REMAN", "ANOS", "MOTOR", "SERIE", "MODELO")
+
+
+def codigos_no_texto(texto: str, ignorar: str = "") -> list[str]:
+    """Os part numbers escondidos no texto livre do ERP.
+
+    O campo de aplicação da planilha guarda referência cruzada em prosa::
+
+        ECA EMBREAGEM SCANIA SEM CABO REMAN 013317707R / COM CABO S2CP10087A
+
+    Ali dentro estão os dois códigos que têm chance real de existir em
+    catálogo de fornecedor — enquanto o código do próprio item (`S2CP10055A`)
+    pode não existir em lugar nenhum. Até a v0.30 esses códigos eram ignorados,
+    e era por isso que peça assim voltava da busca sem nada.
+
+    Não decide nada: devolve termos para *oferecer* a quem está na tela. O
+    casamento de peça continua sendo por código exato, no publisher.
+    """
+    achados: list[str] = []
+    alvo_ignorar = normalizar_codigo(ignorar)
+
+    # A barra separa referências ("51258031008/51258201001"), então ela é
+    # divisor de token, não parte do código.
+    for bruto in re.split(r"[\s/;,()]+", (texto or "").upper()):
+        for token in _RE_CODIGO_SOLTO.findall(bruto):
+            limpo = token.strip(".-")
+            digitos = sum(c.isdigit() for c in limpo)
+            # 4 dígitos é o piso: pega `S2CP10087A` (6) e barra `SW23` (2).
+            if digitos < 4 or len(limpo) < 6 or limpo in _NAO_E_CODIGO:
+                continue
+            if normalizar_codigo(limpo) == alvo_ignorar:
+                continue
+            if limpo not in achados:
+                achados.append(limpo)
+    return achados
+
+
+def separar_termo(alvo: str) -> tuple[str, str]:
+    """O mesmo termo, na forma que cada destino aceita.
+
+    Devolve ``(para_site, para_api)``. São diferentes de propósito:
+
+    * A **busca ampla por API** vai melhor com nome e código na mesma
+      consulta — "Servo Embreagem Scania Sem Cabo S2CP10055A" dá dois sinais
+      ao buscador e desempata sozinha.
+    * A **busca interna dos sites** vai pior com isso. Caixa de busca de loja
+      quase sempre devolve zero quando recebe frase com código no meio: ela
+      quer o código sozinho. Então quando a frase tem um código dentro, é só
+      ele que vai para os sites.
+
+    Mandar a mesma coisa para os dois era o que fazia a busca por nome (v0.29)
+    render menos do que devia nos sites cadastrados.
+    """
+    frase = (alvo or "").strip()
+    if not frase or e_codigo(frase):
+        return frase, frase
+    dentro = codigos_no_texto(frase)
+    return (dentro[0] if dentro else frase), frase
+
+
 def _palavras(termo: str) -> set:
     """Palavras que valem para casar um nome de peça: as de 4 letras ou mais.
 
@@ -431,9 +497,16 @@ async def buscar_por_api(termo: str, contexto: str = "",
                          limite: int = MAX_CANDIDATOS) -> list[Candidato]:
     """Busca ampla via API. Sem chave configurada, devolve lista vazia.
 
-    Duas provedoras porque as duas têm faixa gratuita que cobre o uso da
-    Águia (Brave ~2.000 consultas/mês, Google CSE 100/dia) e nenhuma das duas
-    exige contrato. A escolha é do dono: ``BUSCA_API_PROVEDOR``.
+    Duas provedoras, e nenhuma exige contrato. A escolha é do dono, em
+    ``BUSCA_API_PROVEDOR``.
+
+    Custo, conferido em setembro de 2026: a Brave encerrou em 12/02/2026 o
+    plano gratuito de 2.000 consultas/mês e passou a cobrar por consulta —
+    US$ 5 por mil, com US$ 5 de crédito mensal (~1.000 consultas). O Google
+    CSE segue com 100/dia grátis. Uma varredura das 1.687 peças custa uns
+    US$ 8 na Brave, menos o crédito. O limite de vazão dela é 50 consultas
+    por segundo, bem acima da concorrência da esteira — não precisa de
+    controle de vazão aqui.
     """
     s = get_settings()
     chave = (s.busca_api_key or "").strip()
@@ -565,10 +638,16 @@ async def buscar(codigo: str, contexto: str = "",
             "Sites de busca — pode ser o site do fabricante da peça.")
         return resultado
 
-    tarefas = [buscar_no_site(s["padrao"], alvo, codigo=codigo) for s in sites]
+    # Cada destino recebe a forma que ele aceita: código seco para a busca
+    # interna dos sites, frase inteira para a busca ampla. Ver separar_termo().
+    para_site, para_api = separar_termo(alvo)
+
+    tarefas = [buscar_no_site(s["padrao"], para_site, codigo=codigo)
+               for s in sites]
     if resultado.api_ativa:
         # na busca ampla, o contexto só ajuda quando o alvo é o código seco
-        tarefas.append(buscar_por_api(alvo, contexto if alvo == codigo else ""))
+        tarefas.append(
+            buscar_por_api(para_api, contexto if para_api == codigo else ""))
 
     respostas = await asyncio.gather(*tarefas, return_exceptions=True)
 

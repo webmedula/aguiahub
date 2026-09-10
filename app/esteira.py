@@ -80,12 +80,16 @@ def _agora() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-async def _uma_peca(item_id: int) -> str:
+async def _uma_peca(item_id: int, tentar_outros: bool = False) -> str:
     """Processa uma peça e devolve o rótulo do que aconteceu.
 
     Toda a decisão de aproveitamento é delegada ao ``publisher`` — a esteira
     não tem regra própria de direito autoral nem de casamento de peça. Se um
     dia a regra mudar, muda num lugar só.
+
+    ``tentar_outros`` liga a segunda tentativa quando o código não achou nada:
+    os códigos escritos no campo de aplicação e, por último, o nome da peça.
+    Desligado por padrão porque multiplica consultas pagas de busca.
     """
     from app.publisher import (_codigo_confere, aplicar_dados_da_pesquisa,
                                usar_ficha_da_pesquisa)
@@ -98,6 +102,24 @@ async def _uma_peca(item_id: int) -> str:
     contexto = expandir(linha["descricao_erp"] or "")
 
     achados = await busca.buscar(codigo, contexto)
+
+    if not achados.candidatos and tentar_outros:
+        # Segunda tentativa, só para quem voltou de mãos vazias. A ordem é por
+        # precisão: os códigos escritos no campo de aplicação são referência
+        # cruzada (equivalente, substituto, remanufaturado) e casam exato; o
+        # nome é o último recurso, porque traz muito resultado e muito lixo.
+        #
+        # Fica atrás de uma opção na tela porque cada tentativa aqui é uma
+        # consulta paga na Brave, multiplicada por 1.687 peças.
+        for outro in busca.codigos_no_texto(linha["aplicacao"] or "", codigo):
+            achados = await busca.buscar(outro, contexto)
+            if achados.candidatos:
+                break
+        else:
+            nome = expandir(linha["descricao_erp"] or "")
+            if nome:
+                achados = await busca.buscar(codigo, contexto, termo=nome)
+
     if not achados.candidatos:
         storage.marcar_esteira(item_id, NADA,
                                "; ".join(achados.avisos)[:300], [])
@@ -150,11 +172,15 @@ async def _uma_peca(item_id: int) -> str:
 
 
 async def rodar(lote_id: int, limite: int = 0, reprocessar: bool = False,
-                execucao_id: int | None = None) -> dict:
+                execucao_id: int | None = None,
+                tentar_outros: bool = False) -> dict:
     """Roda a esteira no lote inteiro. Feita para rodar em segundo plano.
 
     ``limite`` processa só as N peças de maior valor parado — serve para uma
     primeira rodada curta, antes de soltar nas 1.687.
+
+    ``tentar_outros`` repassa a segunda tentativa (ver ``_uma_peca``) para
+    cada peça que voltar vazia da busca pelo código.
     """
     contagem = {PRONTA: 0, ENRIQUECIDA: 0, CANDIDATOS: 0, NADA: 0, FALHOU: 0}
 
@@ -186,8 +212,9 @@ async def rodar(lote_id: int, limite: int = 0, reprocessar: bool = False,
             if storage.execucao_parando(execucao_id):
                 return
             try:
-                rotulo = await asyncio.wait_for(_uma_peca(item_id),
-                                                timeout=SEGUNDOS_POR_PECA)
+                rotulo = await asyncio.wait_for(
+                    _uma_peca(item_id, tentar_outros),
+                    timeout=SEGUNDOS_POR_PECA)
             except asyncio.TimeoutError:
                 storage.marcar_esteira(item_id, FALHOU,
                                        "os sites demoraram demais", [])
@@ -229,7 +256,8 @@ _EM_ANDAMENTO: set = set()
 
 
 def iniciar_em_segundo_plano(lote_id: int, limite: int = 0,
-                             reprocessar: bool = False) -> int:
+                             reprocessar: bool = False,
+                             tentar_outros: bool = False) -> int:
     """Cria a execução e solta a esteira num task de fundo.
 
     Devolve o id da execução na hora, para a tela já poder acompanhar. O
@@ -241,7 +269,8 @@ def iniciar_em_segundo_plano(lote_id: int, limite: int = 0,
 
     async def _rodar() -> None:
         try:
-            await rodar(lote_id, limite, reprocessar, execucao_id)
+            await rodar(lote_id, limite, reprocessar, execucao_id,
+                        tentar_outros)
         except Exception as exc:                          # noqa: BLE001
             log.exception("esteira do lote %s morreu", lote_id)
             storage.atualizar_execucao(

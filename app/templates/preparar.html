@@ -136,6 +136,47 @@
   </form>
 </div>
 
+{% if termos_busca %}
+<div class="card">
+  <h2>Procurar esta peça na internet</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Procura nos sites cadastrados{% if api_ativa %} e na internet inteira{% endif %}
+    e devolve as páginas candidatas. Nada é aproveitado sozinho — você abre a
+    página, confere que é a peça certa e decide.
+  </p>
+
+  <form method="post" action="/itens/{{ item['id'] }}/buscar-na-internet">
+    <input type="hidden" name="lote_id" value="{{ lote_id }}">
+    <input type="hidden" name="volta_para" value="preparar">
+    <label for="termo">O que procurar</label>
+    <input id="termo" name="termo" value="{{ termos_busca[0]['termo'] }}"
+           style="width:100%;font-size:15px;padding:11px;margin-bottom:10px">
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+      {% for t in termos_busca %}
+      <button type="button" class="secundario" title="{{ t['ajuda'] }}"
+              onclick="document.getElementById('termo').value = this.dataset.termo"
+              data-termo="{{ t['termo'] }}"
+              style="font-size:13px;padding:7px 13px">{{ t['rotulo'] }}</button>
+      {% endfor %}
+    </div>
+    <p class="fraco" style="font-size:12px">{{ termos_busca[0]['ajuda'] }}</p>
+
+    <button type="submit" style="font-size:15px;padding:11px 18px">
+      Procurar</button>
+  </form>
+
+  {% if termos_busca|length > 3 %}
+  <p class="fraco" style="font-size:12px;margin-bottom:0">
+    Os botões com cara de código vieram do campo de aplicação desta peça. São
+    referências cruzadas — equivalente, substituto ou versão remanufaturada —
+    e costumam existir em catálogo de fornecedor mesmo quando o código do ERP
+    não existe em site nenhum.
+  </p>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="card" style="{{ 'border-color:rgba(46,163,107,.5)' if pronto else '' }}">
   {% if pronto %}
     <h2>Pronto para publicar</h2>

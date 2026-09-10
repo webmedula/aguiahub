@@ -128,9 +128,24 @@
       <input type="checkbox" name="reprocessar" value="1"
              style="width:auto"> refazer as que já passaram
     </label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;
+                  color:var(--txt);margin-bottom:9px"
+           title="Só para as peças que voltarem vazias da busca pelo código.">
+      <input type="checkbox" name="tentar_outros" value="1"
+             style="width:auto"> insistir com o nome e os códigos da aplicação
+    </label>
     <button type="submit" style="font-size:16px;padding:12px 20px">
       Processar agora</button>
   </form>
+
+  <p class="fraco" style="font-size:12px;margin-bottom:6px">
+    <strong>Insistir</strong> só entra em ação quando a busca pelo código
+    volta vazia. Aí a peça é procurada pelos códigos escritos no campo de
+    aplicação (referência cruzada — equivalente, substituto, remanufaturado)
+    e, em último caso, pelo nome. Acha bem mais, mas cada tentativa extra é
+    uma consulta a mais na busca ampla, que é paga por consulta — por isso
+    vem desmarcado.
+  </p>
 
   <p class="fraco" style="font-size:12px;margin-bottom:0">
     Cada peça leva alguns segundos (são requisições a sites de terceiros, uma

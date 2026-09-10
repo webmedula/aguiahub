@@ -15,7 +15,7 @@
     </div>
   </div>
   <a class="botao" style="background:transparent;border:1px solid var(--linha)"
-     href="/itens/{{ item['id'] }}">Voltar para a peça</a>
+     href="{{ voltar_para or '/itens/' ~ item['id'] }}">Voltar para a peça</a>
 </div>
 
 <div class="card" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
@@ -104,7 +104,7 @@
     foto da peça na prateleira — que é o caminho que nunca depende de
     ninguém.
   </p>
-  <a class="botao secundario" href="/fila/{{ lote_id }}"
+  <a class="botao secundario" href="{{ voltar_para or '/fila/' ~ lote_id }}"
      style="font-size:15px;padding:11px 18px">Voltar e tirar foto</a>
 </div>
 

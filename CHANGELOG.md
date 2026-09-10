@@ -5,6 +5,102 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.31.0 — 10/09/2026
+
+**A resposta estava escrita na própria tela.**
+
+O João mandou o pré-anúncio do SERVO EMBREAGEM SCANIA (`S2CP10055A`), sem foto
+e sem nada achado na busca. Duas linhas acima do "Falta foto para publicar"
+estava o campo de aplicação:
+
+    ECA EMBREAGEM SCANIA SEM CABO REMAN 013317707R / COM CABO S2CP10087A
+
+Dois códigos de referência cruzada — a versão remanufaturada e a versão com
+cabo. Os dois têm chance real de existir em catálogo de fornecedor, enquanto
+o `S2CP10055A` é código interno da Águia e pode não existir em site nenhum.
+
+O sistema procurava só pelo código do item e ignorava os outros dois. Era por
+isso que peça assim voltava vazia.
+
+### Códigos escondidos em texto livre
+
+`busca.codigos_no_texto()` acha part number dentro de prosa. Exige massa de
+dígito (4 no mínimo) e 6 caracteres, que é o que separa código de palavra:
+`S2CP10087A` entra, `EMBREAGEM`, `SCANIA` e `REMAN` não. A barra é divisor,
+então `51258031008/51258201001` vira duas referências. Casos reais da planilha
+que passam a ser aproveitados:
+
+    MESMA 0445020007          ->  0445020007
+    ANTIGA Nº0445020606       ->  0445020606
+    SUBSTITUIDO POR 0445120340 -> 0445120340
+
+E o que **não** pode virar código, também da planilha real:
+
+    MODULO PLD MERCEDES MBB SW23 EURO 3 AP528   ->  []
+    SPRINTER 311 415 515 2.2 CDI                ->  []
+
+### Frase para a busca ampla, código para os sites
+
+`busca.separar_termo()` manda formas diferentes para cada destino, e isso é de
+propósito:
+
+| destino | recebe | por quê |
+|---|---|---|
+| busca ampla (Brave/Google) | `Servo Embreagem Scania Sem Cabo S2CP10055A` | duas pistas de uma vez, desempata sozinha |
+| busca interna dos sites | `S2CP10055A` | caixa de busca de loja devolve zero para frase com código no meio |
+
+Era o que faltava para a busca por nome da v0.29 render nos sites cadastrados:
+os dois destinos recebiam o mesmo texto, e nos sites não achava nada.
+
+### Campo de busca no pré-anúncio
+
+Pedido do João: procurar imagem sem sair da tela onde se revisa o anúncio. O
+cartão "Procurar esta peça na internet" entrou no `preparar.html`, com
+preenchimento rápido — **nome + código** (padrão), só o código, só o nome, e um
+botão para cada código achado na aplicação. O "voltar" devolve ao pré-anúncio
+em vez de jogar na tela da peça, que fazia perder o texto recém-revisado.
+
+### Esteira: segunda tentativa, desmarcada por padrão
+
+Quando a busca pelo código volta vazia e a caixa **"insistir com o nome e os
+códigos da aplicação"** está marcada, a peça é procurada pelos códigos da
+aplicação e, em último caso, pelo nome. A ordem é por precisão: código exato
+primeiro, nome por último porque traz muito lixo junto.
+
+Vem desmarcada porque a Brave encerrou o plano gratuito em 12/02/2026 e agora
+cobra por consulta (US$ 5 por mil, com US$ 5 de crédito mensal). Cada tentativa
+extra multiplica por 1.687 peças. O limite de vazão subiu para 50 consultas por
+segundo, bem acima da concorrência da esteira — não precisa de controle de
+vazão. O docstring que ainda falava em "2.000 consultas/mês" foi corrigido.
+
+### A trava que importa
+
+Achar a peça pelo código `013317707R` **não** autoriza usar a ficha dela para o
+item `S2CP10055A`. Pode ser a versão remanufaturada, com foto e texto de outra
+coisa. O casamento continua exigindo o código do próprio item no `publisher`,
+então uma página achada por código equivalente termina em **candidatos** — link
+guardado para a pessoa conferir, nada aproveitado. Há teste trancando isso.
+
+### O nome do João saiu das telas do operador
+
+A opção "não tenho certeza — deixar para o João" virou **"não tenho certeza —
+separar para conferir"**, em `fila.html`, `decididas.html` e `sem_saida_ml.html`.
+O botão e o status `em_duvida` continuam existindo: é a válvula que separa "não
+sei" de "não achei" e evita anunciar peça errada. O `teste.html` manteve o nome,
+porque é a tela de diagnóstico, feita para o desenvolvedor.
+
+### Ainda em aberto
+
+A descrição termina com **"Produto novo, original de estoque."** fixo no
+`sheets.py:391`, e o `publisher` manda `condition: "new"` — em todas as 1.687
+peças, inclusive as com R de remanufatura. Nada foi mexido aqui porque depende
+de saber se o ERP tem campo que marque a peça como remanufaturada, ou se o R no
+código é o único sinal.
+
+**287 testes passando.**
+
+---
+
 ## v0.30.0 — 10/09/2026
 
 **O menu do site virava "peça encontrada".**
