@@ -5,6 +5,57 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.31.1 — 10/09/2026
+
+**`br` minúsculo derrubava a busca ampla inteira.**
+
+Primeira busca real com a chave da Brave ligada, na VALVULA RETORNO JOHN
+FIRAD:
+
+    A busca por API falhou (HTTPStatusError).
+    A busca nos sites cadastrados continua funcionando.
+
+Dois problemas nessa única linha, e o segundo é meu.
+
+### O parâmetro
+
+A Brave documenta `country` como ISO 3166-1 alpha-2 **em maiúscula** (`BR`).
+O código mandava `"br"`, e a resposta é HTTP 422 — a consulta nem chega a ser
+feita. `search_lang`, ao contrário, é minúsculo mesmo (`pt`), então não dá
+para simplesmente padronizar os dois. Corrigido, com o porquê no comentário
+para ninguém "arrumar" de volta.
+
+Entrou junto o `Accept-Encoding: gzip`, que está nos exemplos da Brave.
+
+### A mensagem de erro, que era o problema maior
+
+"HTTPStatusError" não diz se o problema é a chave, o crédito, o limite ou um
+parâmetro. Obriga a adivinhar — e adivinhar custou ler a documentação inteira
+para descobrir uma letra maiúscula.
+
+Agora o erro diz o código HTTP, a causa provável e o que fazer:
+
+| código | o que o sistema passa a dizer |
+|---|---|
+| 401 | a chave não foi aceita — confira `BUSCA_API_KEY` no EasyPanel |
+| 402 | o crédito acabou; a Brave cobra por consulta desde 12/02/2026 |
+| 403 | a chave não vale para o endpoint de busca web |
+| 422 | parâmetro recusado — se acabou de atualizar, a versão antiga ainda está rodando |
+| 429 | consultas demais em pouco tempo |
+
+E repassa o código próprio da provedora quando ele vem no corpo
+(`RATE_LIMITED`, `QUOTA_EXCEEDED`), que é mais preciso que qualquer palpite.
+
+### Botão "Testar a chave agora"
+
+Em `/sites`, ao lado do estado da busca ampla. Gasta **uma** consulta e mostra
+na hora o que a provedora respondeu. Diagnosticar isso pela esteira é caro e
+lento; um botão resolve em cinco segundos.
+
+**291 testes passando**, incluindo um que tranca `country=BR` em maiúscula.
+
+---
+
 ## v0.31.0 — 10/09/2026
 
 **A resposta estava escrita na própria tela.**

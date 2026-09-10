@@ -277,3 +277,85 @@ def test_voltar_da_busca_devolve_ao_pre_anuncio(tmp_path, monkeypatch):
                             "volta_para": "preparar"}).text
 
     assert f"/itens/{item_id}/preparar?lote_id={lote_id}" in pagina
+
+
+# --- diagnóstico da busca ampla (v0.31.1) ---------------------------------
+
+def _resposta(status: int, corpo=None):
+    import httpx
+
+    pedido = httpx.Request("GET", "https://api.search.brave.com/res/v1/web/search")
+    if corpo is None:
+        return httpx.Response(status, request=pedido, text="erro")
+    return httpx.Response(status, request=pedido, json=corpo)
+
+
+def test_erro_da_api_diz_o_codigo_e_o_que_fazer():
+    """"HTTPStatusError" e mais nada obrigava a adivinhar. Não pode voltar."""
+    import httpx
+
+    from app.busca import _erro_da_api
+
+    exc = httpx.HTTPStatusError("", request=_resposta(422).request,
+                                response=_resposta(422))
+    recado = _erro_da_api("brave", exc)
+
+    assert "422" in recado
+    assert "recusou algum parâmetro" in recado
+    # e continua dizendo que o resto do sistema não parou
+    assert "sites cadastrados continua funcionando" in recado
+
+
+def test_erro_de_chave_aponta_para_a_variavel_certa():
+    import httpx
+
+    from app.busca import _erro_da_api
+
+    exc = httpx.HTTPStatusError("", request=_resposta(401).request,
+                                response=_resposta(401))
+    assert "BUSCA_API_KEY" in _erro_da_api("brave", exc)
+
+
+def test_erro_repassa_o_codigo_proprio_da_provedora():
+    """RATE_LIMITED/QUOTA_EXCEEDED é mais preciso que qualquer palpite meu."""
+    import httpx
+
+    from app.busca import _erro_da_api
+
+    resp = _resposta(429, {"error": {"code": "RATE_LIMITED"}})
+    exc = httpx.HTTPStatusError("", request=resp.request, response=resp)
+    recado = _erro_da_api("brave", exc)
+
+    assert "429" in recado
+    assert "RATE_LIMITED" in recado
+
+
+def test_a_brave_recebe_o_pais_em_maiuscula(monkeypatch):
+    """A causa da falha real: `br` minúsculo devolve 422."""
+    import httpx
+
+    import app.busca as mod
+
+    monkeypatch.setattr(cfg.get_settings(), "busca_api_key", "chave-de-teste")
+    monkeypatch.setattr(cfg.get_settings(), "busca_api_provedor", "brave")
+    visto: dict = {}
+
+    class FalsoCliente:
+        def __init__(self, *a, **k): pass
+
+        async def __aenter__(self): return self
+
+        async def __aexit__(self, *a): return False
+
+        async def get(self, url, params=None, headers=None):
+            visto["params"] = params or {}
+            visto["headers"] = headers or {}
+            return httpx.Response(200, request=httpx.Request("GET", url),
+                                  json={"web": {"results": []}})
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", FalsoCliente)
+    asyncio.run(mod.buscar_por_api("0281020067"))
+
+    assert visto["params"]["country"] == "BR"
+    assert visto["params"]["search_lang"] == "pt"
+    assert visto["headers"]["X-Subscription-Token"] == "chave-de-teste"

@@ -651,6 +651,41 @@ async def remover_fonte(dominio: str = Form(...)):
     return RedirectResponse("/fontes", status_code=303)
 
 
+@app.post("/sites/testar-busca", response_class=HTMLResponse)
+async def testar_busca_ampla(request: Request):
+    """Gasta UMA consulta e diz exatamente o que a provedora respondeu.
+
+    Existe porque diagnosticar isso pela esteira é caro e lento: a primeira
+    busca real da Águia falhou com "HTTPStatusError" e mais nada, e descobrir
+    que a causa era o código de país exigiu ler documentação. Um botão que
+    responde na hora resolve em cinco segundos o que a mensagem de erro
+    deveria ter dito sozinha.
+    """
+    try:
+        achados = await mod_busca.buscar_por_api("bomba injetora bosch")
+        teste = {
+            "ok": True,
+            "recado": (f"Funcionou: {len(achados)} resultado(s) para "
+                       f'"bomba injetora bosch". A chave está valendo.'),
+        }
+    except mod_busca.BuscaError as exc:
+        teste = {"ok": False, "recado": str(exc)}
+    except Exception as exc:                              # noqa: BLE001
+        teste = {"ok": False,
+                 "recado": f"A consulta nem saiu: {type(exc).__name__} — {exc}"}
+
+    return templates.TemplateResponse(request, "sites.html", {
+        "request": request,
+        "sites": storage.listar_sites_busca(),
+        "autorizados": sorted(d for d in storage.dominios_autorizados()
+                              if d != "*"),
+        "api_ativa": bool((s.busca_api_key or "").strip()),
+        "api_provedor": s.busca_api_provedor,
+        "erro": "",
+        "teste": teste,
+    })
+
+
 @app.get("/sites", response_class=HTMLResponse)
 async def sites(request: Request, erro: str = ""):
     """Onde o sistema procura a peça quando ninguém tem o link.

@@ -493,6 +493,51 @@ async def buscar_no_site(padrao: str, termo: str,
 
 # --- API de busca (pronta, ligada só com chave) ---------------------------
 
+#: O que cada código HTTP quer dizer, em português e com o que fazer. Existe
+#: porque a primeira busca real da Águia falhou com "HTTPStatusError" e mais
+#: nada — mensagem que não diz se o problema é a chave, o crédito ou um
+#: parâmetro, e obriga a adivinhar. O erro precisa dizer o que fazer.
+_RECADOS_HTTP = {
+    401: ("A chave da busca não foi aceita. Confira BUSCA_API_KEY nas "
+          "variáveis do EasyPanel — é a chave da API, não a senha da conta."),
+    402: ("O crédito da busca acabou. A Brave cobra por consulta desde "
+          "12/02/2026; veja o saldo no painel dela."),
+    403: ("A chave não tem permissão para este endpoint. Confira se ela foi "
+          "criada para o plano de busca web."),
+    422: ("A Brave recusou algum parâmetro da consulta. Se acabou de "
+          "atualizar o sistema, é provável que a versão antiga ainda esteja "
+          "rodando: a v0.31.1 corrigiu o código de país, que ia minúsculo."),
+    429: ("Consultas demais em pouco tempo. A esteira segura sozinha; se "
+          "isto aparecer com o sistema parado, o limite do plano estourou."),
+}
+
+
+def _erro_da_api(provedor: str, exc: "httpx.HTTPStatusError") -> str:
+    """Mensagem de falha que diz o código, a causa provável e o que fazer."""
+    codigo = exc.response.status_code
+    recado = _RECADOS_HTTP.get(codigo, "")
+
+    # A Brave devolve um código próprio no corpo (RATE_LIMITED, QUOTA_...),
+    # que é mais preciso que o HTTP. Vale mais que qualquer palpite meu.
+    detalhe = ""
+    try:
+        corpo = exc.response.json()
+        erro = corpo.get("error") if isinstance(corpo, dict) else None
+        if isinstance(erro, dict):
+            detalhe = str(erro.get("code") or erro.get("detail") or "")[:120]
+        elif erro:
+            detalhe = str(erro)[:120]
+    except ValueError:
+        detalhe = (exc.response.text or "")[:120].replace("\n", " ")
+
+    partes = [f"A busca ampla ({provedor}) respondeu HTTP {codigo}."]
+    if recado:
+        partes.append(recado)
+    if detalhe:
+        partes.append(f"A provedora disse: {detalhe}")
+    partes.append("A busca nos sites cadastrados continua funcionando.")
+    return " ".join(partes)
+
 async def buscar_por_api(termo: str, contexto: str = "",
                          limite: int = MAX_CANDIDATOS) -> list[Candidato]:
     """Busca ampla via API. Sem chave configurada, devolve lista vazia.
@@ -529,17 +574,24 @@ async def buscar_por_api(termo: str, contexto: str = "",
             else:
                 resp = await cli.get(
                     "https://api.search.brave.com/res/v1/web/search",
+                    # `country` em MAIÚSCULA: a Brave documenta ISO 3166-1
+                    # alpha-2 e devolve 422 com "br" minúsculo. Foi o que
+                    # derrubou a primeira busca real da Águia (v0.31.0).
+                    # `search_lang`, ao contrário, é minúsculo.
                     params={"q": busca_completa, "count": min(limite, 20),
-                            "country": "br", "search_lang": "pt"},
+                            "country": "BR", "search_lang": "pt"},
                     headers={"Accept": "application/json",
+                             "Accept-Encoding": "gzip",
                              "X-Subscription-Token": chave})
                 resp.raise_for_status()
                 web = (resp.json().get("web") or {}).get("results") or []
                 brutos = [(r.get("url", ""), r.get("title", "")) for r in web]
+    except httpx.HTTPStatusError as exc:
+        raise BuscaError(_erro_da_api(provedor, exc)) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise BuscaError(
-            f"A busca por API falhou ({type(exc).__name__}). A busca nos "
-            "sites cadastrados continua funcionando.") from exc
+            f"A busca por API não respondeu ({type(exc).__name__}). A busca "
+            "nos sites cadastrados continua funcionando.") from exc
 
     formas = ({normalizar_codigo(f) for f in variantes_de_codigo(termo)}
               if e_codigo(termo) else set())

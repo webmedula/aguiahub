@@ -116,6 +116,22 @@
     <strong style="color:var(--ok)">Ligada</strong> — além dos sites acima, a
     busca consulta a internet inteira via {{ api_provedor }}.
   </p>
+
+  {% if teste %}
+  <div class="aviso" style="margin-top:12px;{{
+       'border-color:rgba(46,163,107,.5);background:rgba(46,163,107,.1)'
+       if teste['ok'] else
+       'border-color:rgba(208,69,63,.4);background:rgba(208,69,63,.1)' }}">
+    {{ teste['recado'] }}
+  </div>
+  {% endif %}
+
+  <form method="post" action="/sites/testar-busca" style="margin-top:12px">
+    <button class="secundario" type="submit" style="font-size:14px">
+      Testar a chave agora</button>
+    <span class="fraco" style="font-size:12px;margin-left:8px">
+      Gasta uma consulta e mostra o que a provedora respondeu.</span>
+  </form>
   {% else %}
   <p style="margin:0">
     <strong>Desligada.</strong> Hoje a busca alcança só os sites listados
