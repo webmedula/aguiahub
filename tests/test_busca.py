@@ -402,3 +402,98 @@ def test_a_tela_da_peca_oferece_os_dois_caminhos(tmp_path, monkeypatch):
     assert "Pelo nome da peça" in tela
     # a marca genérica do ERP não entra no termo sugerido
     assert "OUTRAS MARCAS" not in tela.split("Pelo nome da peça")[0][-500:]
+
+
+# ---------------------------------------------------------------------------
+# Menu de site não é candidato (v0.30.0)
+# ---------------------------------------------------------------------------
+#
+# Caso real: procurando o código 2420580001 (CAPA DE PROTECAO) na
+# bulltechdiesel, a tela mostrou 8 "páginas encontradas" — e todas as oito
+# eram links do menu do site: "Meus pedidos", "Como comprar", "Bomba de
+# Água", "Canos e Tubos"... A busca não achou nada, o site devolveu a página
+# de nenhum resultado, e o sistema raspou o menu dela.
+
+MENU_DA_LOJA = """<html><body>
+<a href="/meus-pedidos">Meus pedidos</a>
+<a href="/como-comprar">Como comprar</a>
+<a href="/produtos/bomba-de-agua">Bomba de Água</a>
+<a href="/produtos/canos-e-tubos">Canos e Tubos</a>
+<a href="/produtos/bomba-de-oleo">Bomba de Óleo</a>
+<a href="/produtos/lona-de-freio">Lona De Freio</a>
+<a href="/produtos/bloco-de-motor">Bloco de Motor</a>
+<a href="/produtos/reparo-injetor">Reparo Injetor</a>
+<p>Sua busca não retornou nenhum resultado.</p>
+</body></html>"""
+
+# a mesma loja, agora com um produto de verdade no resultado
+RESULTADO_COM_PECA = """<html><body>
+<a href="/meus-pedidos">Meus pedidos</a>
+<a href="/produtos/bomba-de-agua">Bomba de Água</a>
+<a href="/produto/capa-de-protecao-bosch-2420580001">
+   Capa de Proteção Bosch 2420580001</a>
+</body></html>"""
+
+
+def test_pagina_de_nenhum_resultado_e_reconhecida():
+    from app.busca import pagina_sem_resultado
+    assert pagina_sem_resultado(MENU_DA_LOJA) is True
+    assert pagina_sem_resultado(RESULTADO_COM_PECA) is False
+
+
+def test_menu_do_site_nao_vira_candidato():
+    """O bug relatado: 8 candidatos, nenhum produto."""
+    from app.busca import links_candidatos
+    achados = links_candidatos(MENU_DA_LOJA, "https://bulltechdiesel.com.br/busca",
+                               "2420580001")
+    assert achados == []
+
+
+def test_categoria_do_menu_nao_entra_nem_morando_em_produtos():
+    """"Bomba de Água" mora em /produtos/ igual à peça e não é texto de menu.
+
+    O que a separa é o título: peça carrega código ou é longa; categoria são
+    duas ou três palavras genéricas.
+    """
+    from app.busca import links_candidatos
+    achados = links_candidatos(
+        RESULTADO_COM_PECA, "https://bulltechdiesel.com.br/busca", "2420580001")
+    urls = [c.url for c in achados]
+    assert not any("bomba-de-agua" in u for u in urls)
+    assert not any("meus-pedidos" in u for u in urls)
+
+
+def test_a_peca_de_verdade_continua_entrando():
+    """O aperto no filtro não pode derrubar o resultado legítimo."""
+    from app.busca import links_candidatos
+    achados = links_candidatos(
+        RESULTADO_COM_PECA, "https://bulltechdiesel.com.br/busca", "2420580001")
+    assert achados
+    assert "capa-de-protecao-bosch-2420580001" in achados[0].url
+    assert achados[0].confere_codigo is True
+
+
+def test_tamanho_do_texto_sozinho_nao_qualifica_mais():
+    """Era o buraco: `len(texto) >= 12` dava 1 ponto e o link entrava.
+
+    'Bomba de Água' tem 13 caracteres — foi assim que o menu inteiro virou
+    candidato.
+    """
+    from app.busca import links_candidatos
+    html = ('<html><body><a href="/institucional/pagina-qualquer">'
+            'Um texto bem longo aqui</a></body></html>')
+    assert links_candidatos(html, "https://x.com.br/busca", "2420580001") == []
+
+
+def test_peca_equivalente_continua_entrando_mesmo_sem_bater_codigo():
+    """Regra deliberada desde a v0.24: equivalente é útil para quem procura.
+
+    O aperto contra o menu do site não pode derrubá-la junto — o que separa
+    peça de categoria é o título carregar código ou ser longo.
+    """
+    from app.busca import _parece_peca
+    assert _parece_peca("Sensor de Rotação Bosch 0261210170") is True
+    assert _parece_peca("Capa De Protecao Bosch Lacre Usos Diversos") is True
+    assert _parece_peca("Bomba de Água") is False
+    assert _parece_peca("Canos e Tubos") is False
+    assert _parece_peca("Reparo Injetor") is False

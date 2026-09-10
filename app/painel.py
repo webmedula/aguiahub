@@ -249,7 +249,11 @@ def resumo_do_anuncio(item_id: int) -> dict | None:
                   else "fotos tiradas no estoque")
     else:
         imagens = fotos_site[:10]
-        origem = (f"fotos de {linha['fonte_dados']}" if linha["fonte_dados"]
+        # Sem foto nenhuma, não há origem para anunciar. O cartão chegou a
+        # dizer "fotos da loja da Águia" logo acima de "Falta foto" — duas
+        # frases contraditórias na mesma tela.
+        origem = ("" if not imagens else
+                  f"fotos de {linha['fonte_dados']}" if linha["fonte_dados"]
                   else "fotos da loja da Águia")
 
     por_catalogo = linha["status"] == "aguardando_aprovacao"

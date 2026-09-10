@@ -75,7 +75,37 @@ _LIXO = ("/carrinho", "/cart", "/checkout", "/finalizar", "/minha-conta",
          "/my-account", "/wp-login", "/wp-admin", "/login", "/cadastro",
          "/categoria", "/category", "/categoria-produto", "/tag/", "/page/",
          "/feed", "/politica", "/privacidade", "/termos", "/contato",
-         "/quem-somos", "/sobre", "/blog/", "/autor/", "/author/")
+         "/quem-somos", "/sobre", "/blog/", "/autor/", "/author/",
+         # institucional e conta, que apareceram de verdade como "candidatos"
+         "/meus-pedidos", "/meu-pedido", "/como-comprar", "/atendimento",
+         "/entrega", "/frete", "/rastrei", "/troca", "/devolucao", "/garantia",
+         "/faq", "/duvidas", "/fale-conosco", "/institucional", "/empresa",
+         "/trabalhe", "/lojas", "/newsletter", "/departamento", "/marcas",
+         "/linha/", "/segmento")
+
+#: O TEXTO do link também denuncia menu. "Bomba de Água" e "Reparo Injetor"
+#: são categorias da bulltechdiesel que entraram como candidatos numa busca
+#: que não achou nada — o site devolveu a página de "nenhum resultado" e o
+#: sistema raspou o menu dela.
+_LIXO_NO_TEXTO = (
+    "meus pedidos", "meu pedido", "como comprar", "quem somos", "fale conosco",
+    "atendimento", "política", "politica", "privacidade", "termos", "trocas",
+    "devolução", "devolucao", "garantia", "frete", "rastrear", "rastreio",
+    "entre em contato", "cadastre-se", "minha conta", "criar conta", "login",
+    "carrinho", "newsletter", "trabalhe conosco", "todas as categorias",
+    "ver todos", "ver mais", "leia mais", "saiba mais", "página inicial",
+    "pagina inicial", "início", "inicio", "home",
+)
+
+#: A página de resultado vazio se anuncia. Reconhecer isso é melhor do que
+#: deixar o filtro adivinhar pelo que sobrou no menu.
+_SEM_RESULTADO = (
+    "nenhum resultado", "nenhum produto encontrado", "nenhum produto foi",
+    "não encontramos", "nao encontramos", "sua busca não retornou",
+    "sua busca nao retornou", "não foram encontrados", "nao foram encontrados",
+    "no products were found", "nada foi encontrado", "sem resultados",
+    "0 produtos encontrados", "nenhum item encontrado",
+)
 
 _EXTENSOES_ARQUIVO = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".pdf",
                       ".zip", ".css", ".js", ".xml", ".ico")
@@ -188,6 +218,25 @@ _RE_LINK = re.compile(
     r'<a\b[^>]*\bhref=["\']([^"\'>]+)["\'][^>]*>(.*?)</a>', re.I | re.S)
 
 
+def _parece_peca(titulo: str) -> bool:
+    """O título é de uma peça, ou de uma categoria do menu?
+
+    "Sensor de Rotação Bosch 0261210170" é peça: tem código.
+    "Capa De Protecao Bosch Lacre Usos Diversos" é peça: é longo.
+    "Bomba de Água", "Canos e Tubos", "Reparo Injetor" são categorias.
+    """
+    texto = (titulo or "").strip()
+    if any(c.isdigit() for c in texto):
+        return True
+    return len(texto.split()) >= 4
+
+
+def pagina_sem_resultado(html: str) -> bool:
+    """A página de busca está dizendo, com todas as letras, que não achou nada."""
+    texto = _limpar(html or "").lower()
+    return any(frase in texto for frase in _SEM_RESULTADO)
+
+
 def _limpar(bruto: str) -> str:
     import html as _html
     texto = re.sub(r"<[^>]+>", " ", bruto or "")
@@ -225,6 +274,11 @@ def links_candidatos(html: str, base: str, termo: str,
     host = dominio_de(base)
     codigo = codigo or (termo if e_codigo(termo) else "")
 
+    # O site já disse que não achou nada. Vasculhar essa página só produz
+    # falso positivo — é dela que saíam os "candidatos" que eram menu.
+    if pagina_sem_resultado(html):
+        return []
+
     formas = {normalizar_codigo(f) for f in variantes_de_codigo(codigo)} \
         if codigo else set()
     formas.discard("")
@@ -259,11 +313,19 @@ def links_candidatos(html: str, base: str, termo: str,
         no_endereco = any(f in alvo_normalizado for f in formas)
         no_texto = any(f in texto_normalizado for f in formas)
 
+        # Texto de menu não é produto, por mais bonito que seja o endereço.
+        if any(l in texto.lower() for l in _LIXO_NO_TEXTO):
+            continue
+
+        cara_de_produto = any(p in caminho for p in _PISTAS_DE_PRODUTO)
+
         pontos = 0
         if no_endereco:
             pontos += 4
         if no_texto:
             pontos += 3
+        if cara_de_produto:
+            pontos += 2
 
         if palavras:
             # Busca por nome: pontua por quantas palavras do termo aparecem.
@@ -275,12 +337,18 @@ def links_candidatos(html: str, base: str, termo: str,
                 continue
             pontos += achadas
 
-        if any(p in caminho for p in _PISTAS_DE_PRODUTO):
-            pontos += 2
-        if len(texto) >= 12:
-            pontos += 1
+        # SINAL REAL para entrar na lista: o código apareceu, ou o endereço
+        # tem cara de página de produto, ou (na busca por nome) as palavras
+        # casaram. Antes bastava o texto do link ter 12 caracteres — um
+        # desempate que virou critério de entrada por descuido, e enchia a
+        # tela com o menu do site sempre que a busca não achava nada:
+        # "Meus pedidos", "Como comprar", "Bomba de Água"...
         if pontos <= 0:
             continue
+
+        # daqui para baixo é só desempate entre candidatos que já entraram
+        if len(texto) >= 12:
+            pontos += 1
 
         anterior = achados.get(url)
         if anterior is None or pontos > anterior.pontos:
@@ -291,7 +359,17 @@ def links_candidatos(html: str, base: str, termo: str,
             # mesma URL vinda da imagem e do nome: fica com o texto melhor
             anterior.titulo = texto
 
-    ordenados = sorted(achados.values(),
+    # Categoria não é peça — e mora no mesmo lugar que ela ("/produtos/bomba-de-agua"
+    # e "/produto/capa-de-protecao-2420580001" têm a mesma cara). O que separa
+    # as duas é o TÍTULO: nome de peça carrega código ou é longo; nome de
+    # categoria são duas ou três palavras genéricas, sem número nenhum.
+    #
+    # Peça equivalente do mesmo site continua entrando de propósito (ela é
+    # útil, e a tela já marca que o código não bate) — só o menu sai.
+    encontrados = [c for c in achados.values()
+                   if c.confere_codigo or _parece_peca(c.titulo)]
+
+    ordenados = sorted(encontrados,
                        key=lambda c: (-c.pontos, len(c.titulo or "")))
     return ordenados[:limite]
 

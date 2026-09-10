@@ -5,6 +5,70 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.30.0 — 10/09/2026
+
+**O menu do site virava "peça encontrada".**
+
+O João mandou a tela da CAPA DE PROTECAO (`2420580001`). A seção "o que o
+sistema encontrou" listava **8 páginas** — e as oito eram links do menu da
+bulltechdiesel:
+
+    Meus pedidos · Como comprar · Bomba de Água · Canos e Tubos
+    Bomba de Óleo · Lona De Freio · Bloco de Motor · Reparo Injetor
+
+Nenhuma delas é produto. A busca pelo código não achou nada, o site devolveu
+a página de "nenhum resultado", e o sistema raspou o menu dela — oferecendo
+um botão *usar* em cada uma, que é convite para casar a peça errada.
+
+### A causa: um desempate que virou critério de entrada
+
+```python
+if len(texto) >= 12:
+    pontos += 1
+if pontos <= 0:
+    continue
+```
+
+O comprimento do texto era para desempatar candidatos que já tinham entrado
+por mérito. Do jeito que estava, **ele sozinho qualificava**: "Bomba de Água"
+tem 13 caracteres, ganhava o ponto e entrava. Agora só entra quem tem sinal
+de verdade — o código apareceu, o endereço tem cara de página de produto, ou
+(na busca por nome) as palavras casaram. O comprimento voltou a ser só
+desempate, depois do corte.
+
+### Três filtros novos
+
+**A página que diz que não achou nada** é reconhecida ("nenhum resultado",
+"sua busca não retornou", "no products were found"…) e nem é vasculhada.
+Melhor ler o que o site declarou do que adivinhar pelo que sobrou no menu.
+
+**Texto de menu não é peça**, por mais bem-arrumado que seja o endereço:
+"meus pedidos", "como comprar", "fale conosco", "minha conta", "ver todos" e
+companhia saem fora pelo próprio texto do link.
+
+**Categoria não é peça** — e mora no mesmo lugar que ela: `/produtos/bomba-de-agua`
+tem a mesma cara de `/produto/capa-de-protecao-2420580001`. O que as separa é
+o título: nome de peça carrega código ou é longo; nome de categoria são duas
+ou três palavras genéricas, sem número.
+
+Aqui houve um cuidado deliberado. A primeira versão deste filtro descartava
+todo candidato que não batesse o código — e derrubava junto a **peça
+equivalente do mesmo site**, que entra de propósito desde a v0.24 porque é
+útil para quem está identificando a peça (a tela já marca que o código não
+bate). O teste que protegia essa decisão pegou a regressão; o filtro foi
+refeito para separar peça de categoria, não peça de peça.
+
+### Também nesta versão
+
+O cartão anunciava **"fotos da loja da Águia"** logo acima de **"Falta
+foto"** — duas frases contraditórias na mesma tela, na mesma peça. Sem foto
+nenhuma não há origem para anunciar, e agora o cartão fica calado sobre isso.
+
+Sete testes novos, 270 no total. Verificado com os 8 links exatos da tela
+relatada: de 8 "candidatos" para 0.
+
+---
+
 ## v0.29.0 — 10/09/2026
 
 **Procurar pelo nome da peça, não só pelo código.**

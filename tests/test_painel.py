@@ -264,3 +264,15 @@ def test_tela_de_configuracao_abre(tmp_path, monkeypatch):
     r = cli.get("/config")
     assert r.status_code == 200
     assert "Marcas autorizadas" in r.text
+
+
+def test_cartao_nao_anuncia_origem_de_foto_quando_nao_ha_foto(tmp_path,
+                                                              monkeypatch):
+    """A tela chegou a dizer "fotos da loja da Águia" logo acima de "Falta
+    foto" — duas frases contraditórias na mesma tela."""
+    lote_id, ids = _lote(tmp_path, monkeypatch)
+    r = painel.resumo_do_anuncio(ids["sem_foto"])
+
+    assert r["imagens"] == []
+    assert r["origem_fotos"] == ""
+    assert r["publicavel"] is False
