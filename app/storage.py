@@ -162,6 +162,12 @@ _MIGRACOES = {
         "esteira_rotulo":     "TEXT",
         "esteira_resultado":  "TEXT",
         "candidatos":         "TEXT",
+        # De onde veio CADA foto baixada de endereço colado: arquivo, URL
+        # exata, domínio e quando. Um campo só (`fonte_dados`) não serve aqui
+        # — uma peça pode ter foto de dois fornecedores diferentes, e a
+        # pergunta que importa, se chegar reclamação, é "de onde veio ESTA
+        # imagem", não "de onde veio esta peça".
+        "fotos_origem":       "TEXT",
     },
 }
 
@@ -972,3 +978,64 @@ def encerrar_medicoes_orfas() -> int:
              json.dumps({"erro": "Interrompida por reinício do servidor."},
                         ensure_ascii=False)))
         return cur.rowcount
+
+
+# ---------------------------------------------------------------------------
+# Origem das fotos baixadas de um endereço colado
+# ---------------------------------------------------------------------------
+
+def registrar_origem_de_foto(item_id: int, arquivo: str, url: str,
+                             dominio: str) -> None:
+    """Guarda de onde veio uma foto baixada, por arquivo.
+
+    O João decidiu que colar o endereço de uma imagem baixa e registra a
+    origem, em vez de exigir o site autorizado antes. O registro é o que
+    sobra para responder com precisão se um dia chegar reclamação — então
+    ele precisa ser fiel: a URL exata, não só o domínio.
+    """
+    with conexao() as conn:
+        linha = conn.execute("SELECT fotos_origem FROM itens WHERE id = ?",
+                             (item_id,)).fetchone()
+        if linha is None:
+            return
+        try:
+            registro = json.loads(linha["fotos_origem"] or "[]")
+        except ValueError:
+            registro = []
+
+        registro = [r for r in registro if r.get("arquivo") != arquivo]
+        registro.append({"arquivo": arquivo, "url": url, "dominio": dominio,
+                         "quando": datetime.now(timezone.utc).isoformat()})
+        conn.execute(
+            "UPDATE itens SET fotos_origem = ?, atualizado_em = ? WHERE id = ?",
+            (json.dumps(registro, ensure_ascii=False),
+             datetime.now(timezone.utc).isoformat(), item_id))
+
+
+def origens_de_foto(item_id: int) -> dict:
+    """{nome do arquivo: {url, dominio, quando}} das fotos baixadas."""
+    linha = item(item_id)
+    if linha is None:
+        return {}
+    try:
+        registro = json.loads(linha["fotos_origem"] or "[]")
+    except ValueError:
+        return {}
+    return {r["arquivo"]: r for r in registro if r.get("arquivo")}
+
+
+def esquecer_origem_de_foto(item_id: int, arquivo: str) -> None:
+    """A foto foi apagada — o registro dela não deve sobreviver e confundir."""
+    with conexao() as conn:
+        linha = conn.execute("SELECT fotos_origem FROM itens WHERE id = ?",
+                             (item_id,)).fetchone()
+        if linha is None or not linha["fotos_origem"]:
+            return
+        try:
+            registro = json.loads(linha["fotos_origem"])
+        except ValueError:
+            return
+        conn.execute(
+            "UPDATE itens SET fotos_origem = ? WHERE id = ?",
+            (json.dumps([r for r in registro if r.get("arquivo") != arquivo],
+                        ensure_ascii=False), item_id))

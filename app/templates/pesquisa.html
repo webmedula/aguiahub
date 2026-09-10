@@ -25,9 +25,6 @@
     <p style="margin:0">Não achei <code>{{ item['sku'] }}</code> nos códigos
       dessa página. Pode ser peça equivalente, pode ser outra peça. <strong>Só
       aproveite se você reconhecer a peça.</strong></p>
-    <p class="fraco" style="font-size:13px;margin-bottom:0">
-      Já aconteceu neste projeto de um corpo distribuidor casar com um livro.
-      Por isso a confirmação é sua, não do sistema.</p>
   {% endif %}
 </div>
 
@@ -79,49 +76,83 @@
 </div>
 {% endif %}
 
-{% if dados.fotos %}
-<div class="card" style="border-color:rgba(46,163,107,.4)">
-  <h2>Fotos de {{ dados.dominio }}</h2>
-  <p class="fraco" style="font-size:13px;margin-top:0">
-    Este domínio está na sua lista de fontes autorizadas — ou seja, você
-    declarou ter direito de usar este material. Por isso a ficha, as fotos
-    <strong>e a descrição</strong> abaixo podem ser aproveitadas; dá para
-    editar tudo antes de publicar, na tela de pré-anúncio.
-  </p>
-  <div style="display:flex;gap:10px;flex-wrap:wrap">
-    {% for f in dados.fotos[:6] %}
-    <img src="{{ f }}" alt="" loading="lazy"
-         style="width:120px;height:120px;object-fit:contain;background:#fff;
-                border-radius:8px;border:1px solid var(--linha)">
-    {% endfor %}
+{# ---- fotos: três estados, nunca silêncio ---- #}
+<div class="card" style="{{ 'border-color:rgba(46,163,107,.4)' if dados.fotos }}">
+  <h2>Fotos
+    {% if dados.fotos %}
+      <span class="fraco" style="font-weight:400">· {{ dados.fotos|length }}
+        de {{ dados.dominio }}, liberadas</span>
+    {% elif dados.fotos_bloqueadas %}
+      <span class="fraco" style="font-weight:400">·
+        {{ dados.fotos_bloqueadas }} encontrada(s)</span>
+    {% endif %}
+  </h2>
+
+  {% if dados.fotos %}
+    <p class="fraco" style="font-size:13px;margin-top:0">
+      {{ dados.dominio }} está na sua lista de fontes autorizadas — a ficha,
+      as fotos e a descrição podem ser aproveitadas, e dá para editar tudo
+      antes de publicar.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      {% for f in dados.fotos[:6] %}
+      <img src="{{ f }}" alt="" loading="lazy"
+           style="width:120px;height:120px;object-fit:contain;background:#fff;
+                  border-radius:8px;border:1px solid var(--linha)">
+      {% endfor %}
+    </div>
+
+  {% elif dados.fotos_bloqueadas %}
+    <p style="margin-top:0">A página tem
+      <strong>{{ dados.fotos_bloqueadas }} foto(s)</strong>, mas
+      <strong>{{ dados.dominio }}</strong> não está na sua lista de fontes
+      autorizadas — então elas não entram sozinhas no anúncio.</p>
+    <p class="fraco" style="font-size:13px">
+      Se a Águia representa esta marca ou tem direito sobre o material,
+      autorize o site: vale para todas as peças dele daqui em diante.
+    </p>
+    <form method="post" action="/fontes"
+          style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <input type="hidden" name="dominio" value="{{ dados.dominio }}">
+      <input type="hidden" name="voltar_para" value="/itens/{{ item['id'] }}">
+      <div style="flex:1;min-width:240px">
+        <label for="obs">Marca ou observação (opcional)</label>
+        <input id="obs" name="observacao"
+               placeholder="{{ dados.marca or 'fornecedor' }}"
+               style="width:100%;padding:10px">
+      </div>
+      <button class="secundario" type="submit" style="padding:11px 18px">
+        Autorizar {{ dados.dominio }}</button>
+    </form>
+
+  {% else %}
+    <p style="margin-top:0">Não achei foto nenhuma nessa página.</p>
+    <p class="fraco" style="font-size:13px">
+      Alguns sites carregam a imagem de um jeito que o sistema não alcança. Se
+      você está vendo a foto na tela, clique nela com o botão direito, escolha
+      <em>copiar endereço da imagem</em> e cole abaixo.
+    </p>
+  {% endif %}
+
+  {# ---- colar o endereço da imagem: vale nos três estados ---- #}
+  <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--linha)">
+    <label for="endereco">Baixar uma imagem pelo endereço</label>
+    <form method="post" action="/itens/{{ item['id'] }}/foto-por-url"
+          style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input type="hidden" name="volta_para" value="peca">
+      <input id="endereco" type="url" name="endereco" required
+             placeholder="https://.../foto-do-produto.jpg"
+             style="flex:1;min-width:300px;padding:10px">
+      <button class="secundario" type="submit" style="padding:10px 16px">
+        Baixar imagem</button>
+    </form>
+    <p class="fraco" style="font-size:12px;margin-bottom:0">
+      A imagem é baixada e guardada como foto desta peça, e o endereço de onde
+      ela veio fica registrado junto.
+    </p>
   </div>
 </div>
-{% elif dados.fotos_bloqueadas %}
-<div class="card">
-  <h2>Fotos</h2>
-  <p style="margin:0">A página tem {{ dados.fotos_bloqueadas }} foto(s), mas
-    <strong>{{ dados.dominio }} não está na sua lista de fontes autorizadas</strong>,
-    então elas não são aproveitadas.</p>
-  <p class="fraco" style="font-size:13px">
-    Foto de site alheio é obra protegida: usar sem direito derruba anúncio por
-    denúncia e arrisca a conta da Águia Parts. Se a Águia representa esta marca
-    e tem direito sobre o material, autorize o site aqui — vale para todas as
-    peças dele daqui em diante.
-  </p>
-  <form method="post" action="/fontes"
-        style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-    <input type="hidden" name="dominio" value="{{ dados.dominio }}">
-    <input type="hidden" name="voltar_para" value="/fila/{{ lote_id }}">
-    <div style="flex:1;min-width:240px">
-      <label for="obs">Marca ou observação (opcional)</label>
-      <input id="obs" name="observacao" placeholder="{{ dados.marca }} — distribuidor oficial"
-             style="width:100%;padding:10px">
-    </div>
-    <button class="secundario" type="submit" style="padding:11px 18px">
-      Autorizar {{ dados.dominio }}</button>
-  </form>
-</div>
-{% endif %}
 
 {% if dados.descricao_referencia %}
 <div class="card">

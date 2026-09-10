@@ -189,7 +189,13 @@ def enfeitar(linha: sqlite3.Row) -> dict:
 
     if proprias:
         dados["capa"] = f"/fotos/{linha['id']}/{proprias[0]}"
-        dados["origem_foto"] = "foto tirada no estoque"
+        # Foto baixada de endereço colado não é foto do estoque: dizer que é
+        # esconderia justamente a informação que interessa se alguém
+        # reclamar da imagem.
+        origens = storage.origens_de_foto(linha["id"])
+        baixada = origens.get(proprias[0])
+        dados["origem_foto"] = (f"foto de {baixada['dominio']}" if baixada
+                                else "foto tirada no estoque")
     elif fotos_site:
         dados["capa"] = fotos_site[0]
         dados["origem_foto"] = (f"foto de {linha['fonte_dados']}"
@@ -236,7 +242,11 @@ def resumo_do_anuncio(item_id: int) -> dict | None:
     proprias = mod_fotos.listar(item_id)
     if proprias:
         imagens = [f"/fotos/{item_id}/{n}" for n in proprias]
-        origem = "fotos tiradas no estoque"
+        origens = storage.origens_de_foto(item_id)
+        dominios = sorted({o["dominio"] for n, o in origens.items()
+                           if n in proprias})
+        origem = (f"fotos de {', '.join(dominios)}" if dominios
+                  else "fotos tiradas no estoque")
     else:
         imagens = fotos_site[:10]
         origem = (f"fotos de {linha['fonte_dados']}" if linha["fonte_dados"]

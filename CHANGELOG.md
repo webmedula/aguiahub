@@ -5,6 +5,81 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.28.0 — 10/09/2026
+
+**A foto estava na página o tempo todo — o sistema é que não olhava.**
+
+Relato do João, numa peça real (módulo PLD, `apolloonibus.com.br`): a tela da
+ficha não falava nada sobre foto. Nem "achei", nem "achei mas não posso usar".
+Silêncio — e ele teve que perguntar *"não está pegando a imagem? ou está?"*.
+
+Não estava. E por dois motivos independentes, que valem registrar porque um
+escondia o outro:
+
+**1. O leitor de meta tag exigia os atributos numa ordem.** A expressão
+antiga só casava `<meta property="og:image" content="...">`. Metade dos sites
+escreve `<meta content="..." property="og:image">` — e aí a foto não existia
+para o sistema. Agora cada `<meta>` é lida atributo por atributo, sem depender
+de ordem, e `twitter:image` também vale.
+
+**2. Ninguém olhava as `<img>` da página.** O extrator lia ficha estruturada
+(JSON-LD) e meta tags, e parava aí. Site pequeno de autopeça quase nunca tem
+JSON-LD — mas a foto está lá, numa `<img>`, que é justamente onde a pessoa a
+vê. Agora, quando não há nada estruturado, o sistema varre as imagens da
+página: aceita `data-src` e afins (é como plataforma de loja carrega imagem
+preguiçosa), descarta logo, banner, ícone e selo de pagamento, ignora imagem
+declarada pequena, e prefere caminho com cara de produto (`/img/p/`,
+`/produto/`, `/uploads/`). A mesma foto em cinco tamanhos vira uma só.
+
+### A tela nunca mais fica em silêncio sobre foto
+
+Três estados, sempre um deles:
+
+- **achei N, pode usar** — o site está autorizado;
+- **achei N, mas o site não está autorizado** — com o botão de autorizar ali
+  mesmo, que vale para todas as peças daquele fornecedor daqui em diante;
+- **não achei nenhuma** — com a instrução do que fazer.
+
+### Baixar a foto por endereço colado
+
+Pedido do João: às vezes o sistema não acha e a pessoa que está olhando a
+página acha em dois segundos. Agora dá para clicar na foto com o botão
+direito, copiar o endereço da imagem e colar — na tela da ficha ou na tela da
+peça. O sistema baixa, confere que é imagem de verdade, guarda como foto da
+peça e ela passa a estar pronta para publicar.
+
+**Decisão do João sobre a regra:** este caminho **baixa e registra a origem**,
+em vez de exigir o site autorizado antes. Então o registro precisa ser bom: o
+sistema guarda a **URL exata** de cada foto baixada, o domínio e a data — por
+foto, não por peça, porque uma peça pode ter imagem de dois fornecedores
+diferentes e a pergunta que importa é "de onde veio ESTA imagem". A tela da
+peça mostra essa lista.
+
+Efeito colateral bom: foto baixada de fora **deixou de ser chamada de "foto
+tirada no estoque"** na lista e no cartão. Ela aparece como "foto de
+apolloonibus.com.br" — chamar de foto do estoque esconderia exatamente a
+informação que interessa se alguém reclamar.
+
+### Um detalhe de domínio que evitou um erro sério
+
+A foto daquela peça mora em `apolloonibus.fbitsstatic.net` — a CDN da
+plataforma de e-commerce, não o site da loja. Se a autorização olhasse o
+domínio da imagem, autorizar essa CDN significaria autorizar **todas as lojas
+que usam a FBits**. O sistema decide pelo domínio da **página**, que é a loja
+— e agora há teste trancando isso.
+
+### Também nesta versão
+
+O aviso *"já aconteceu neste projeto de um corpo distribuidor casar com um
+livro"* saiu das telas, a pedido do João. Contar história interna do projeto
+para o pessoal da Águia é estranho, e o cartão de "o código não bate" já diz o
+que a pessoa precisa saber. A regra continua igual no código, com o mesmo
+teste — mudou só o que o cliente lê.
+
+Doze testes novos, 256 no total.
+
+---
+
 ## v0.27.0 — 09/09/2026
 
 **Três telas: a lista, a peça, o cartão.**

@@ -211,10 +211,52 @@
     <button class="secundario" type="submit" style="padding:10px 16px">
       Enviar foto da peça</button>
   </form>
-  <p class="fraco" style="font-size:12px;margin-bottom:0">
+  <p class="fraco" style="font-size:12px">
     No celular o botão abre a câmera. Até 10 fotos, 10 MB cada.
   </p>
+
+  <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--linha)">
+    <label for="endereco">Ou baixar uma imagem pelo endereço</label>
+    <form method="post" action="/itens/{{ item.id }}/foto-por-url"
+          style="display:flex;gap:10px;flex-wrap:wrap">
+      <input type="hidden" name="lote_id" value="{{ lote_id }}">
+      <input type="hidden" name="volta_para" value="peca">
+      <input id="endereco" type="url" name="endereco" required
+             placeholder="https://.../foto-do-produto.jpg"
+             style="flex:1;min-width:300px;padding:10px">
+      <button class="secundario" type="submit" style="padding:10px 16px">
+        Baixar imagem</button>
+    </form>
+    <p class="fraco" style="font-size:12px;margin-bottom:0">
+      No navegador, clique na foto com o botão direito e escolha
+      <em>copiar endereço da imagem</em>. O endereço de onde ela veio fica
+      registrado junto com a foto.
+    </p>
+  </div>
 </div>
+
+{% if origens_de_foto %}
+<div class="card">
+  <h2>De onde vieram as fotos</h2>
+  <p class="fraco" style="font-size:13px;margin-top:0">
+    Fica guardado para dar para responder com precisão, se um dia alguém
+    perguntar de onde saiu uma imagem deste anúncio.
+  </p>
+  <table style="font-size:13px">
+    <tr><th style="width:120px">Foto</th><th>Endereço de origem</th>
+        <th style="width:150px">Baixada em</th></tr>
+    {% for arquivo, o in origens_de_foto.items() %}
+    <tr>
+      <td style="font-family:ui-monospace,monospace">{{ arquivo }}</td>
+      <td><a href="{{ o.url }}" target="_blank" rel="noopener"
+             style="word-break:break-all;font-size:12px">{{ o.url[:90] }}</a>
+        <div class="fraco" style="font-size:11px">{{ o.dominio }}</div></td>
+      <td class="fraco">{{ (o.quando or '')[:16]|replace('T', ' ') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
 
 {# ---------- o que o sistema achou ---------- #}
 <div class="card">

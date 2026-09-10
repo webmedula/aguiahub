@@ -487,6 +487,7 @@ async def peca(request: Request, item_id: int, aviso: str = ""):
         "resumo": resumo,
         "fotos_proprias": mod_fotos.listar(item_id),
         "fotos_site": json.loads(linha["loja_fotos"] or "[]"),
+        "origens_de_foto": storage.origens_de_foto(item_id),
         "situacoes": mod_painel.SITUACOES,
         "aviso": aviso,
     })
@@ -1025,6 +1026,55 @@ async def enviar_fotos(item_id: int, lote_id: int = Form(...),
                             status_code=303)
 
 
+@app.post("/itens/{item_id}/foto-por-url")
+async def foto_por_url(item_id: int, endereco: str = Form(...),
+                       lote_id: int = Form(...), volta_para: str = Form("peca")):
+    """Baixa a imagem de um endereço colado e guarda como foto da peça.
+
+    Existe porque o extrator nem sempre acha a foto sozinho, e a pessoa que
+    está olhando a página acha em dois segundos: ela clica com o botão
+    direito, copia o endereço da imagem e cola aqui.
+
+    Decisão do João (v0.28.0): este caminho **baixa e registra a origem**, em
+    vez de exigir o site autorizado antes. O registro é o que sobra para
+    responder se um dia chegar reclamação — por isso guarda a URL exata, e
+    não só o domínio. O botão de autorizar o site continua ao lado, para
+    transformar a decisão desta foto em decisão para todas as próximas.
+    """
+    from app.extrator import dominio_de
+
+    if storage.item(item_id) is None:
+        raise HTTPException(404, "Peça não encontrada.")
+
+    endereco = (endereco or "").strip()
+    if not endereco.startswith(("http://", "https://")):
+        raise HTTPException(400, (
+            "Cole o endereço da imagem, começando com https:// — no navegador, "
+            "clique com o botão direito na foto e escolha 'copiar endereço da "
+            "imagem'."))
+
+    try:
+        conteudo = await loja.baixar_foto(endereco)
+    except loja.LojaError as exc:
+        raise HTTPException(400, str(exc))
+
+    try:
+        arquivo = mod_fotos.salvar(item_id, conteudo,
+                                   loja.nome_do_arquivo(endereco, 0))
+    except mod_fotos.FotoInvalida as exc:
+        raise HTTPException(400, str(exc))
+
+    storage.registrar_origem_de_foto(item_id, arquivo, endereco,
+                                     dominio_de(endereco))
+
+    linha = storage.item(item_id)
+    if linha is not None and linha["status"] == "na_fila":
+        storage.atualizar_dados_catalogo(item_id, status="foto_do_operador")
+
+    return RedirectResponse(_destino_fotos(item_id, lote_id, volta_para),
+                            status_code=303)
+
+
 @app.post("/itens/{item_id}/fotos/{nome}/apagar")
 async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...),
                       volta_para: str = Form("fila")):
@@ -1032,6 +1082,7 @@ async def apagar_foto(item_id: int, nome: str, lote_id: int = Form(...),
         mod_fotos.apagar(item_id, nome)
     except mod_fotos.FotoInvalida as exc:
         raise HTTPException(400, str(exc))
+    storage.esquecer_origem_de_foto(item_id, nome)
 
     # Apagou a última foto e não há foto de site: a peça deixa de estar pronta.
     # Sem isto ela continuaria na lista como "pronta" e falharia na publicação.

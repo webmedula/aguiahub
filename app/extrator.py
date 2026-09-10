@@ -199,6 +199,11 @@ def montar(html: str, url: str) -> DadosExtraidos:
 
     _do_opengraph(html, d, url)
 
+    # Última tentativa: as <img> da própria página. É onde a foto está nos
+    # sites que não publicam ficha estruturada — a maioria dos fornecedores.
+    if not d.fotos and not d.fotos_bloqueadas:
+        _guardar_fotos(_imagens_da_pagina(html, url), d, url)
+
     if not d.nome:
         titulo = re.search(r"<title[^>]*>(.*?)</title>", html,
                            re.I | re.S)
@@ -323,16 +328,134 @@ def _guardar_fotos(urls: list[str], d: DadosExtraidos, base: str) -> None:
         d.fotos_bloqueadas = len(limpas)
 
 
+#: Lê os atributos de uma tag qualquer sem depender da ordem em que vêm.
+_RE_ATRIBUTO = re.compile(
+    r"""([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s">]+))""")
+
+
+def _atributos(tag: str) -> dict:
+    saida = {}
+    for nome, aspas, apostrofo, solto in _RE_ATRIBUTO.findall(tag):
+        saida[nome.lower()] = aspas or apostrofo or solto or ""
+    return saida
+
+
+_RE_META = re.compile(r"<meta\b[^>]*>", re.I)
+
+
+def _metas(html: str) -> dict:
+    """Todas as meta tags da página, por property/name.
+
+    A versão anterior usava uma expressão que exigia ``property`` ANTES de
+    ``content``. Metade dos sites escreve ao contrário
+    (``<meta content="..." property="og:image">``) e a foto simplesmente não
+    era encontrada — foi o que aconteceu com a apolloonibus.com.br.
+    """
+    saida: dict = {}
+    for tag in _RE_META.findall(html or ""):
+        attrs = _atributos(tag)
+        chave = (attrs.get("property") or attrs.get("name") or "").lower()
+        if chave and "content" in attrs and chave not in saida:
+            saida[chave] = attrs["content"]
+    return saida
+
+
 def _do_opengraph(html: str, d: DadosExtraidos, url: str) -> None:
-    metas = dict(re.findall(
-        r'<meta[^>]+(?:property|name)=["\']og:([a-z:]+)["\'][^>]+content=["\']([^"\']*)["\']',
-        html, re.I))
-    if not d.nome and metas.get("title"):
-        d.nome = _texto(metas["title"])[:200]
-    if not d.descricao_referencia and metas.get("description"):
-        d.descricao_referencia = _texto(metas["description"])[:4000]
-    if metas.get("image") and not d.fotos and not d.fotos_bloqueadas:
-        _guardar_fotos([metas["image"]], d, url)
+    metas = _metas(html)
+    if not d.nome and metas.get("og:title"):
+        d.nome = _texto(metas["og:title"])[:200]
+    if not d.descricao_referencia and metas.get("og:description"):
+        d.descricao_referencia = _texto(metas["og:description"])[:4000]
+
+    imagem = (metas.get("og:image") or metas.get("og:image:secure_url")
+              or metas.get("twitter:image") or metas.get("twitter:image:src"))
+    if imagem and not d.fotos and not d.fotos_bloqueadas:
+        _guardar_fotos([imagem], d, url)
+
+
+_RE_IMG = re.compile(r"<img\b[^>]*>", re.I)
+
+#: Onde a foto pode estar escondida: plataforma de loja quase sempre carrega
+#: imagem preguiçosa, e aí o ``src`` verdadeiro está num data-attribute.
+_FONTES_DE_IMG = ("src", "data-src", "data-original", "data-lazy-src",
+                  "data-lazy", "data-zoom-image", "data-large_image",
+                  "data-image", "data-echo")
+
+#: Não é foto de produto — é a mecânica da loja.
+_LIXO_NA_IMAGEM = (
+    "logo", "icone", "icon", "favicon", "banner", "sprite", "placeholder",
+    "avatar", "selo", "bandeira", "pagamento", "payment", "cartao", "visa",
+    "master", "boleto", "pix", "whatsapp", "instagram", "facebook", "cart",
+    "carrinho", "pixel", "loader", "spinner", "blank", "seta", "arrow",
+    "bullet", "divider", "separador", "rodape", "footer", "header", "topo",
+)
+
+#: Caminho com cara de foto de produto — vale mais que o resto.
+_PISTA_DE_PRODUTO = ("/img/p/", "/produto", "/produtos", "/product", "/media/",
+                     "/uploads/", "/fotos/", "/images/produto")
+
+
+def _imagens_da_pagina(html: str, base: str, limite: int = 8) -> list[str]:
+    """As fotos que a pessoa vê na página, quando não há dado estruturado.
+
+    Site pequeno de autopeça quase nunca publica JSON-LD, e muitos nem og:image
+    têm — mas a foto do produto está lá, numa ``<img>``. Sem olhar para elas, o
+    extrator dizia "achei zero fotos" numa página cheia de foto.
+
+    Pontua em vez de aceitar tudo: caminho com cara de produto vale mais,
+    imagem declarada pequena e nome de arquivo com cara de enfeite saem fora.
+    """
+    achadas: dict[str, tuple[int, str]] = {}
+
+    for tag in _RE_IMG.findall(html or ""):
+        attrs = _atributos(tag)
+
+        bruto = ""
+        for chave in _FONTES_DE_IMG:
+            if attrs.get(chave, "").strip():
+                bruto = attrs[chave].strip()
+                break
+        if not bruto and attrs.get("srcset"):
+            # srcset: "a.jpg 1x, b.jpg 2x" — a primeira serve
+            bruto = attrs["srcset"].split(",")[0].strip().split(" ")[0]
+        if not bruto or bruto.startswith("data:"):
+            continue
+
+        endereco = urljoin(base, bruto)
+        if not endereco.startswith(("http://", "https://")):
+            continue
+
+        caminho = urlparse(endereco).path.lower()
+        if caminho.endswith(".svg"):
+            continue
+        alvo = (caminho + " " + attrs.get("alt", "").lower() +
+                " " + attrs.get("class", "").lower())
+        if any(lixo in alvo for lixo in _LIXO_NA_IMAGEM):
+            continue
+
+        # imagem declarada pequena é ícone, não foto de peça
+        try:
+            if (attrs.get("width") and int(attrs["width"]) < 120) or \
+                    (attrs.get("height") and int(attrs["height"]) < 120):
+                continue
+        except ValueError:
+            pass
+
+        pontos = 1
+        if any(p in caminho for p in _PISTA_DE_PRODUTO):
+            pontos += 3
+        if attrs.get("alt"):
+            pontos += 1
+
+        # A mesma foto costuma aparecer em vários tamanhos, mudando só a query
+        # (?w=530&h=530). Guardar por caminho evita cinco cópias da mesma peça.
+        chave = urlparse(endereco).netloc + caminho
+        anterior = achadas.get(chave)
+        if anterior is None or pontos > anterior[0]:
+            achadas[chave] = (pontos, endereco)
+
+    ordenadas = sorted(achadas.values(), key=lambda x: -x[0])
+    return [endereco for _, endereco in ordenadas[:limite]]
 
 
 # Modelos de veículo aparecem soltos no nome e na descrição; achar isso é o que
