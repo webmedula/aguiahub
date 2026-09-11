@@ -328,6 +328,38 @@ def _cortar_em_palavra(texto: str, limite: int) -> str:
     return recorte.rstrip(" -/,.>")
 
 
+def completar_nome_truncado(descricao: str, aplicacao: str) -> str:
+    """A descrição inteira, quando o ERP cortou ela e a aplicação tem o resto.
+
+    A planilha da Águia trunca a descrição num tamanho fixo. A peça `MC00522`
+    chegou assim::
+
+        Descrição:  VALVULA RETORNO JOHN          <- cortada antes do "DEERE"
+        Aplicação:  VALVULA RETORNO JOHN DEERE    <- o nome inteiro
+
+    Sem perceber isso, o título saía **"Valvula Retorno John Firad Deere"**: a
+    deduplicação tirava da aplicação as palavras já ditas, sobrava o "Deere"
+    solto, e ele caía depois da marca — partindo "John Deere" no meio. Ninguém
+    procura por "John Firad Deere".
+
+    A regra é estreita de propósito: só vale quando a aplicação **começa** com
+    a descrição inteira e continua em outra palavra. Assim ela dispara no
+    truncamento e fica quieta quando a aplicação é informação diferente
+    ("BOMBA ALTA PRESSAO" + "MERCEDES-BENZ SPRINTER").
+
+    Devolve a descrição original quando não é o caso.
+    """
+    d = (descricao or "").strip()
+    a = (aplicacao or "").strip()
+    if not d or not a or len(a) <= len(d):
+        return d
+    if not a.upper().startswith(d.upper()):
+        return d
+    # o caractere seguinte precisa ser espaço, senão "BOMBA" casaria com
+    # "BOMBAS HIDRAULICAS" e o nome sairia deformado de outro jeito
+    return a if a[len(d)].isspace() else d
+
+
 def montar_titulo(p: LinhaProduto) -> str:
     """Monta o título do anúncio a partir das colunas do ERP.
 
@@ -351,6 +383,14 @@ def montar_titulo(p: LinhaProduto) -> str:
     marca = limpar(p.marca) if p.marca.upper() not in MARCAS_IGNORADAS else ""
     codigo = p.codigo.strip().upper()
     aplicacao = limpar(p.aplicacao)
+
+    # O ERP trunca a descrição. Quando a aplicação é a continuação dela, o
+    # nome inteiro vira a cabeça do título e a aplicação já foi usada — se
+    # sobrasse, a deduplicação a seguir deixaria um fragmento solto depois da
+    # marca ("John Firad Deere"). Ver completar_nome_truncado().
+    inteira = completar_nome_truncado(descricao, aplicacao)
+    if inteira != descricao:
+        descricao, aplicacao = inteira, ""
 
     # não repete a marca se ela já está na descrição
     if marca and marca.upper() in descricao.upper():

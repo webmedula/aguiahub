@@ -776,9 +776,13 @@ def _termo_pelo_nome(linha) -> str:
     título que a loja usa.
     """
     from app.abreviacoes import expandir
-    from app.sheets import MARCAS_IGNORADAS
+    from app.sheets import MARCAS_IGNORADAS, completar_nome_truncado
 
-    partes = [expandir(linha["descricao_erp"] or "")]
+    # Mesma correção do título: com a descrição truncada, a busca saía com
+    # "VALVULA RETORNO JOHN FIRAD" — consulta ruim, porque o nome da peça é
+    # "John Deere" e ele estava partido. O nome inteiro está na aplicação.
+    partes = [completar_nome_truncado(expandir(linha["descricao_erp"] or ""),
+                                      linha["aplicacao"] or "")]
     marca = (linha["marca"] or "").strip()
     if marca and marca.upper() not in MARCAS_IGNORADAS:
         partes.append(marca)

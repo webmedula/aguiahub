@@ -5,6 +5,57 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.31.3 — 11/09/2026
+
+**"Valvula Retorno John Firad Deere".**
+
+O João mandou o pré-anúncio da `MC00522`. O título que ia para o Mercado Livre
+tinha a marca enfiada no meio do nome próprio — e ninguém no mundo procura por
+"John Firad Deere".
+
+### A cadeia
+
+    Descrição (ERP):  VALVULA RETORNO JOHN        <- cortada antes do "DEERE"
+    Aplicação:        VALVULA RETORNO JOHN DEERE  <- o nome inteiro
+    Marca:            FIRAD
+
+A planilha trunca a descrição num tamanho fixo. O montador de título junta
+`<descrição> <marca> <aplicação> <código>` e, para não repetir palavra, remove
+da aplicação tudo que já foi dito. Some "VALVULA RETORNO JOHN", sobra o
+"Deere" órfão — que cai **depois** da marca e parte "John Deere" no meio.
+
+A deduplicação está certa no que ela foi feita para resolver ("Injetor Land
+Rover Continental Injetor Land Rove"). O que faltava era perceber que a
+aplicação, ali, não era informação nova: era o mesmo nome, inteiro.
+
+### A regra
+
+`completar_nome_truncado()` — quando a aplicação **começa** com a descrição e
+continua em outra palavra, ela é a versão não-truncada do mesmo nome, e vira a
+cabeça do título. Estreita de propósito, com dois freios:
+
+* exige espaço depois do trecho repetido, senão `BOMBA` casaria com
+  `BOMBAS HIDRAULICAS` e o nome sairia deformado de outro jeito;
+* não dispara quando a aplicação é informação diferente — `BOMBA ALTA PRESSAO`
+  com `MERCEDES-BENZ SPRINTER` continua exatamente como estava.
+
+| antes | depois |
+|---|---|
+| Valvula Retorno John **Firad Deere** MC00522 | Valvula Retorno John **Deere Firad** MC00522 |
+
+A garantia antiga segue de pé e tem teste: o part number nunca é sacrificado
+por falta de espaço.
+
+### A busca também estava contaminada
+
+O termo oferecido na tela era `VALVULA RETORNO JOHN FIRAD MC00522` — consulta
+ruim justamente porque o nome da peça estava partido. Agora sai
+`VALVULA RETORNO JOHN DEERE FIRAD MC00522`, nos três botões e no campo.
+
+**304 testes passando.**
+
+---
+
 ## v0.31.2 — 11/09/2026
 
 **Errei o palpite duas vezes. Tirei o palpite do código.**
