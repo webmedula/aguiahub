@@ -504,12 +504,46 @@ _RECADOS_HTTP = {
           "12/02/2026; veja o saldo no painel dela."),
     403: ("A chave não tem permissão para este endpoint. Confira se ela foi "
           "criada para o plano de busca web."),
-    422: ("A Brave recusou algum parâmetro da consulta. Se acabou de "
-          "atualizar o sistema, é provável que a versão antiga ainda esteja "
-          "rodando: a v0.31.1 corrigiu o código de país, que ia minúsculo."),
+    422: ("A provedora recusou algum parâmetro da consulta."),
     429: ("Consultas demais em pouco tempo. A esteira segura sozinha; se "
           "isto aparecer com o sistema parado, o limite do plano estourou."),
 }
+
+
+#: Tetos da consulta documentados pela Brave. Passar disso é 422, e um campo
+#: de busca livre na tela permite passar sem querer.
+MAX_CARACTERES_CONSULTA = 400
+MAX_PALAVRAS_CONSULTA = 50
+
+
+def _consulta_no_limite(texto: str) -> str:
+    """Encurta a consulta até o que a provedora aceita."""
+    palavras = (texto or "").split()[:MAX_PALAVRAS_CONSULTA]
+    return " ".join(palavras)[:MAX_CARACTERES_CONSULTA].strip()
+
+
+def _opcionais_da_brave() -> dict:
+    """`country` e `search_lang` — mandados só se alguém pedir.
+
+    Estes dois parâmetros são **afinação**, não requisito: sem eles a busca
+    funciona e devolve resultado do Brasil do mesmo jeito, porque a consulta
+    já leva nome de peça em português e código de fabricante.
+
+    Eles saíram do padrão porque foram a causa de duas falhas seguidas na
+    conta real da Águia. Primeiro ``country="br"`` minúsculo (HTTP 422);
+    depois, já com ``"BR"`` maiúsculo, a Brave seguiu recusando com
+    ``VALIDATION``. Errar o palpite duas vezes é sinal de que o lugar do
+    palpite não é o código: quem quiser afinar liga ``BUSCA_PAIS`` e
+    ``BUSCA_IDIOMA`` nas variáveis de ambiente e vê o resultado no botão
+    "testar a chave", em vez de descobrir no meio de uma esteira.
+    """
+    s = get_settings()
+    saida = {}
+    if (s.busca_pais or "").strip():
+        saida["country"] = s.busca_pais.strip()
+    if (s.busca_idioma or "").strip():
+        saida["search_lang"] = s.busca_idioma.strip()
+    return saida
 
 
 def _erro_da_api(provedor: str, exc: "httpx.HTTPStatusError") -> str:
@@ -535,6 +569,24 @@ def _erro_da_api(provedor: str, exc: "httpx.HTTPStatusError") -> str:
         partes.append(recado)
     if detalhe:
         partes.append(f"A provedora disse: {detalhe}")
+
+    # Num 422, o suspeito número um é a afinação opcional — foi ela que
+    # derrubou a busca da Águia duas vezes. Dizer o que foi mandado poupa a
+    # próxima rodada de adivinhação.
+    if codigo == 422:
+        opcionais = _opcionais_da_brave()
+        if opcionais:
+            escrito = ", ".join(f"{k}={v}" for k, v in opcionais.items())
+            partes.append(
+                f"A consulta foi mandada com {escrito}. Esses parâmetros são "
+                "opcionais: apague BUSCA_PAIS e BUSCA_IDIOMA das variáveis de "
+                "ambiente e a busca volta a funcionar.")
+        else:
+            partes.append(
+                "Nenhum parâmetro opcional foi mandado — só a consulta e a "
+                "quantidade de resultados. Se ainda assim deu 422, o problema "
+                "está na chave ou no plano, não na consulta.")
+
     partes.append("A busca nos sites cadastrados continua funcionando.")
     return " ".join(partes)
 
@@ -558,7 +610,8 @@ async def buscar_por_api(termo: str, contexto: str = "",
     if not chave:
         return []
 
-    busca_completa = " ".join(t for t in (termo, contexto) if t).strip()
+    busca_completa = _consulta_no_limite(
+        " ".join(t for t in (termo, contexto) if t).strip())
     provedor = (s.busca_api_provedor or "brave").strip().lower()
 
     try:
@@ -574,12 +627,8 @@ async def buscar_por_api(termo: str, contexto: str = "",
             else:
                 resp = await cli.get(
                     "https://api.search.brave.com/res/v1/web/search",
-                    # `country` em MAIÚSCULA: a Brave documenta ISO 3166-1
-                    # alpha-2 e devolve 422 com "br" minúsculo. Foi o que
-                    # derrubou a primeira busca real da Águia (v0.31.0).
-                    # `search_lang`, ao contrário, é minúsculo.
                     params={"q": busca_completa, "count": min(limite, 20),
-                            "country": "BR", "search_lang": "pt"},
+                            **_opcionais_da_brave()},
                     headers={"Accept": "application/json",
                              "Accept-Encoding": "gzip",
                              "X-Subscription-Token": chave})

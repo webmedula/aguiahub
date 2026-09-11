@@ -330,14 +330,14 @@ def test_erro_repassa_o_codigo_proprio_da_provedora():
     assert "RATE_LIMITED" in recado
 
 
-def test_a_brave_recebe_o_pais_em_maiuscula(monkeypatch):
-    """A causa da falha real: `br` minúsculo devolve 422."""
+
+
+def _cliente_espiao(monkeypatch):
+    """Substitui o httpx e devolve o que foi realmente mandado para a Brave."""
     import httpx
 
     import app.busca as mod
 
-    monkeypatch.setattr(cfg.get_settings(), "busca_api_key", "chave-de-teste")
-    monkeypatch.setattr(cfg.get_settings(), "busca_api_provedor", "brave")
     visto: dict = {}
 
     class FalsoCliente:
@@ -354,8 +354,87 @@ def test_a_brave_recebe_o_pais_em_maiuscula(monkeypatch):
                                   json={"web": {"results": []}})
 
     monkeypatch.setattr(mod.httpx, "AsyncClient", FalsoCliente)
+    monkeypatch.setattr(cfg.get_settings(), "busca_api_key", "chave-de-teste")
+    monkeypatch.setattr(cfg.get_settings(), "busca_api_provedor", "brave")
+    return visto
+
+
+def test_por_padrao_nao_manda_pais_nem_idioma(monkeypatch):
+    """A causa das duas falhas seguidas na conta real da Águia.
+
+    `country="br"` devolveu 422; corrigido para `"BR"`, a Brave seguiu
+    recusando com VALIDATION. São parâmetros de afinação, não requisitos —
+    então saem do padrão e a consulta vai com o mínimo que funciona.
+    """
+    import app.busca as mod
+
+    visto = _cliente_espiao(monkeypatch)
+    monkeypatch.setattr(cfg.get_settings(), "busca_pais", "")
+    monkeypatch.setattr(cfg.get_settings(), "busca_idioma", "")
+
+    asyncio.run(mod.buscar_por_api("0281020067"))
+
+    assert set(visto["params"]) == {"q", "count"}
+    assert visto["headers"]["X-Subscription-Token"] == "chave-de-teste"
+
+
+def test_quem_quiser_afinar_liga_nas_variaveis(monkeypatch):
+    import app.busca as mod
+
+    visto = _cliente_espiao(monkeypatch)
+    monkeypatch.setattr(cfg.get_settings(), "busca_pais", "BR")
+    monkeypatch.setattr(cfg.get_settings(), "busca_idioma", "pt")
+
     asyncio.run(mod.buscar_por_api("0281020067"))
 
     assert visto["params"]["country"] == "BR"
     assert visto["params"]["search_lang"] == "pt"
-    assert visto["headers"]["X-Subscription-Token"] == "chave-de-teste"
+
+
+def test_consulta_longa_demais_e_encurtada(monkeypatch):
+    """A Brave recusa acima de 400 caracteres / 50 palavras, e o campo de
+    busca da tela é livre — dá para passar do limite sem querer."""
+    import app.busca as mod
+
+    visto = _cliente_espiao(monkeypatch)
+    monkeypatch.setattr(cfg.get_settings(), "busca_pais", "")
+    monkeypatch.setattr(cfg.get_settings(), "busca_idioma", "")
+
+    asyncio.run(mod.buscar_por_api(" ".join(["bomba"] * 120)))
+
+    mandado = visto["params"]["q"]
+    assert len(mandado.split()) <= mod.MAX_PALAVRAS_CONSULTA
+    assert len(mandado) <= mod.MAX_CARACTERES_CONSULTA
+
+
+def test_erro_422_diz_quais_opcionais_foram_mandados(monkeypatch):
+    """Para a próxima rodada não precisar adivinhar de novo."""
+    import httpx
+
+    from app.busca import _erro_da_api
+
+    monkeypatch.setattr(cfg.get_settings(), "busca_pais", "BR")
+    monkeypatch.setattr(cfg.get_settings(), "busca_idioma", "pt")
+
+    resp = _resposta(422, {"error": {"code": "VALIDATION"}})
+    exc = httpx.HTTPStatusError("", request=resp.request, response=resp)
+    recado = _erro_da_api("brave", exc)
+
+    assert "country=BR" in recado
+    assert "BUSCA_PAIS" in recado
+
+
+def test_erro_422_sem_opcionais_aponta_para_a_chave(monkeypatch):
+    import httpx
+
+    from app.busca import _erro_da_api
+
+    monkeypatch.setattr(cfg.get_settings(), "busca_pais", "")
+    monkeypatch.setattr(cfg.get_settings(), "busca_idioma", "")
+
+    resp = _resposta(422, {"error": {"code": "VALIDATION"}})
+    exc = httpx.HTTPStatusError("", request=resp.request, response=resp)
+    recado = _erro_da_api("brave", exc)
+
+    assert "Nenhum parâmetro opcional" in recado
+    assert "chave ou no plano" in recado

@@ -5,6 +5,61 @@ deploy, confira ali se o número bate com o da versão que você subiu.
 
 ---
 
+## v0.31.2 — 11/09/2026
+
+**Errei o palpite duas vezes. Tirei o palpite do código.**
+
+Com a v0.31.1 no ar, a busca ampla continuou em 422 — agora com o código
+próprio da Brave visível, `VALIDATION`. Ou seja: o `country` em maiúscula não
+era (só) o problema.
+
+    A busca ampla (brave) respondeu HTTP 422. (...)
+    A provedora disse: VALIDATION
+
+`country` e `search_lang` são **afinação, não requisito**. Sem eles a busca
+funciona e devolve resultado do Brasil do mesmo jeito, porque a consulta já
+vai em português e com código de fabricante. Duas falhas seguidas no mesmo
+lugar são sinal de que o palpite não pertence ao código.
+
+### O que mudou
+
+A consulta à Brave passa a levar só `q` e `count`. País e idioma saíram do
+padrão e viraram variáveis de ambiente **vazias**:
+
+    BUSCA_PAIS=      (ex.: BR)
+    BUSCA_IDIOMA=    (ex.: pt)
+
+Quem quiser afinar liga e confere no botão "testar a chave" da tela `/sites`
+— uma consulta, resposta na hora — em vez de descobrir no meio de uma esteira
+de 1.687 peças.
+
+### Consulta encurtada antes de sair
+
+A Brave recusa acima de **400 caracteres ou 50 palavras**, e o campo de busca
+do pré-anúncio é livre: dá para passar do limite sem querer, principalmente
+com o botão "nome + código" numa peça de descrição comprida. A consulta passa
+a ser cortada antes de ser enviada.
+
+### O erro de 422 agora acusa o suspeito
+
+Quando dá 422, a mensagem diz **quais** parâmetros opcionais foram mandados:
+
+> A consulta foi mandada com country=BR, search_lang=pt. Esses parâmetros são
+> opcionais: apague BUSCA_PAIS e BUSCA_IDIOMA das variáveis de ambiente e a
+> busca volta a funcionar.
+
+E quando nenhum foi mandado, ela para de acusar a consulta e aponta para onde
+o problema realmente está:
+
+> Nenhum parâmetro opcional foi mandado — só a consulta e a quantidade de
+> resultados. Se ainda assim deu 422, o problema está na chave ou no plano,
+> não na consulta.
+
+**295 testes passando**, incluindo um que tranca que país e idioma **não** vão
+no padrão.
+
+---
+
 ## v0.31.1 — 10/09/2026
 
 **`br` minúsculo derrubava a busca ampla inteira.**

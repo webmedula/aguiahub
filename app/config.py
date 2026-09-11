@@ -57,6 +57,13 @@ class Settings:
     # Provedor: 'brave' (padrão) ou 'google'.
     busca_api_provedor: str = os.getenv("BUSCA_API_PROVEDOR", "brave")
     busca_api_key: str = os.getenv("BUSCA_API_KEY", "")
+    # Afinação da busca ampla, VAZIAS de propósito. Mandar país e idioma para
+    # a Brave foi o que devolveu HTTP 422 duas vezes na conta da Águia — sem
+    # elas a busca funciona, porque a consulta já vai em português com código
+    # de fabricante. Quem quiser experimentar liga aqui e confere no botão
+    # "testar a chave" da tela /sites antes de soltar na esteira.
+    busca_pais: str = os.getenv("BUSCA_PAIS", "")
+    busca_idioma: str = os.getenv("BUSCA_IDIOMA", "")
     # Só para o Google Custom Search: o identificador do mecanismo de busca.
     busca_google_cx: str = os.getenv("BUSCA_GOOGLE_CX", "")
 
